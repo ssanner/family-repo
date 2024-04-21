@@ -447,7 +447,7 @@ class PinballMachine:
     GRAVITY = 0.1 # 0.1 # 0.1
     BUMPER_MULTIPLIER = 2.0 # 2.0
     MAX_SPEED = 15.0
-    BALL_LIMIT = 5
+    BALL_LIMIT = 10
     LAYOUT = [       # beyond color: velx, vely, fixed?, bumper?
                       PinballCircle(CANVAS,WIDTH-75,HEIGHT-550,50,50,"lightblue",0,-14.0,False,2.0,10),
                       PinballCircle(CANVAS,WIDTH-75,HEIGHT-450,50,50,"blue",0,-12.0,False,2.0,10),
