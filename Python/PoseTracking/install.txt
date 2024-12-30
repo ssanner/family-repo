@@ -1,0 +1,2 @@
+# For local media-pipe installation
+pip install msvc-runtime
