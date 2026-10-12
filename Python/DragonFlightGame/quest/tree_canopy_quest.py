@@ -71,8 +71,10 @@ class TreeCanopyQuest(Quest):
         player.rotation_x = lerp(player.rotation_x, vertical * 12, dt * 4)
         game.player.animate(game.elapsed)
 
-        if game.invulnerable <= 0 and self._hits_tree():
-            self._lose_life("TREE STRIKE")
+        if game.invulnerable <= 0:
+            collision_reason = self._collision_reason()
+            if collision_reason:
+                self._lose_life(collision_reason)
         self._update_chasers(dt)
         if game.lives <= 0:
             return
@@ -89,7 +91,7 @@ class TreeCanopyQuest(Quest):
         player.alpha = ((.45 if int(game.elapsed * 12) % 2 else 1)
                         if game.invulnerable > 0 else 1)
 
-    def _hits_tree(self):
+    def _collision_reason(self):
         game = self.game
         player = game.player.entity
         for (x, z, trunk_radius, trunk_bottom, trunk_top,
@@ -101,18 +103,14 @@ class TreeCanopyQuest(Quest):
                 and player.y - .85 < trunk_top
             )
             if trunk_hit:
-                return True
+                return "TREE STRIKE"
             for cx, cy, cz, rx, ry, rz in canopy_colliders:
                 dx = (player.x - cx) / (rx + .55)
                 dy = (player.y + .2 - cy) / (ry + .7)
                 dz = (player.z - cz) / (rz + .65)
                 if dx * dx + dy * dy + dz * dz < 1:
-                    return True
-        for gate_z, opening_low, opening_high in self.forest.altitude_gates:
-            if (abs(player.z - gate_z) < 1.5
-                    and not opening_low <= player.y <= opening_high):
-                return True
-        return False
+                    return "CANOPY STRIKE"
+        return None
 
     def _lose_life(self, reason):
         game = self.game

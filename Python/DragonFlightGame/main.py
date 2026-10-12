@@ -24,7 +24,6 @@ class Forest:
     def __init__(self, seed=12):
         self.random = random.Random(seed)
         self.tree_colliders = []
-        self.altitude_gates = []
         self.root = Entity(name="forest_world")
         self._build_ground()
         self._build_trees()
@@ -61,7 +60,7 @@ class Forest:
                 tree_z = z + (6.0 if row % 2 else 0) + self.random.uniform(-1, 1)
                 # Crown height varies across the forest. Each trunk grows into
                 # its crown so the tree reads as one connected shape.
-                canopy_center_y = self.random.uniform(7.6, 11.4)
+                canopy_center_y = self.random.uniform(6.8, 12.2)
                 trunk_height = canopy_center_y + .3
                 trunk_width = self.random.uniform(.65, .95)
                 bark = self.random.choice((color.rgb32(101, 69, 48),
@@ -92,13 +91,6 @@ class Forest:
                 self.tree_colliders.append((x, tree_z, trunk_width * .5,
                                             -.8, canopy_center_y - .5,
                                             canopy_colliders))
-
-        # Alternating clearances turn the canopy into a vertical route: rise
-        # above the brush on some rows, then duck under a low branch on others.
-        gate_specs = ((40, 2.5, 4.2), (86, 4.7, 6.3), (132, 2.4, 4.0),
-                      (178, 5.0, 6.5), (224, 3.2, 5.0))
-        for gate_z, opening_low, opening_high in gate_specs:
-            self.altitude_gates.append((gate_z, opening_low, opening_high))
 
     def _build_goal(self):
         goal_z = GOAL_Z
