@@ -6,6 +6,7 @@ from ursina import *
 from ursina.models.procedural.cone import Cone
 from ursina.shaders import lit_with_shadows_shader
 from quest import HoopQuest, TreeCanopyQuest
+from quest import WaterJourneyQuest
 
 
 GOAL_Z = 270
@@ -133,7 +134,7 @@ class WhiteRoom:
 
 
 class HoopStage:
-    """An open flight lane with ten visible hoops arranged in a 3D path."""
+    """An open flight lane with six visible hoops arranged in a 3D path."""
 
     def __init__(self):
         self.root = Entity(name="hoop_stage", enabled=False)
@@ -141,12 +142,11 @@ class HoopStage:
                scale=(48, 1, 125), color=color.rgb32(184, 222, 224), unlit=True)
         Entity(parent=self.root, model="cube", position=(0, 18, 48),
                scale=(48, .5, 125), color=color.rgb32(198, 229, 229), unlit=True)
-        centers = ((-3.5, 4.4), (1.0, 6.0), (4.5, 3.5), (0.0, 2.8),
-                   (-4.0, 6.2), (-1.0, 7.1), (4.0, 5.0), (1.5, 3.1),
-                   (-3.7, 4.7), (0.5, 6.3))
+        centers = ((-3.5, 4.4), (2.5, 6.0), (4.5, 3.5), (-1.5, 2.8),
+                   (-4.0, 6.2), (1.5, 5.0))
         self.hoops = []
         for index, (x, y) in enumerate(centers):
-            z = 9 + index * 8.5
+            z = 12 + index * 18
             hoop = Entity(parent=self.root, position=(x, y, z))
             for segment in range(24):
                 angle = math.tau * segment / 24
@@ -160,8 +160,11 @@ class HoopStage:
 class Dragon:
     """Simple stylized dragon with independently animated wings."""
 
-    def __init__(self, position, palette, scale=1.0):
-        self.entity = Entity(position=position, scale=scale)
+    def __init__(self, position, palette, scale=1.0, parent=None):
+        if parent is None:
+            self.entity = Entity(position=position, scale=scale)
+        else:
+            self.entity = Entity(parent=parent, position=position, scale=scale)
         body_color, wing_color, accent_color = palette
         Entity(parent=self.entity, model="sphere", scale=(.86, .68, 1.55),
                color=body_color)
@@ -218,6 +221,7 @@ class DragonFlightGame:
                              (color.rgb32(48, 130, 105),
                               color.rgb32(39, 91, 81),
                               color.rgb32(210, 154, 78)))
+        self.original_player = self.player
         self.chasers = []
         palettes = [
             (color.rgb32(103, 56, 107), color.rgb32(59, 42, 80), color.rgb32(234, 108, 89)),
@@ -234,6 +238,48 @@ class DragonFlightGame:
              color.rgb32(255, 220, 126)))
         self.room_dragon.entity.rotation_y = 180
         self.room_dragon.entity.enabled = False
+        self.water_scene = Entity(parent=self.room.root, name="water_royal_egg_scene",
+                                  enabled=False)
+        water_palette = (color.rgb32(73, 161, 183), color.rgb32(45, 103, 135),
+                         color.rgb32(186, 234, 232))
+        self.water_queen = Dragon(Vec3(0, 1.5, 6), water_palette,
+                                  scale=1.15, parent=self.water_scene)
+        self.water_queen.entity.rotation_y = 180
+        crown_gold = color.rgb32(255, 207, 67)
+        Entity(parent=self.water_queen.entity, model="cube",
+               position=(0, .91, 1.03), scale=(.62, .13, .5), color=crown_gold)
+        for crown_x, crown_z, point_scale in (
+                (-.24, 1.02, .27), (-.12, 1.08, .34),
+                (0, 1.08, .39), (.12, 1.08, .34), (.24, 1.02, .27)):
+            Entity(parent=self.water_queen.entity, model=Cone(),
+                   position=(crown_x, 1.12, crown_z),
+                   scale=(.12, point_scale, .12), color=crown_gold)
+        Entity(parent=self.water_queen.entity, model="sphere",
+               position=(0, .99, 1.3), scale=.14,
+               color=color.rgb32(104, 226, 235), unlit=True)
+        self.water_egg = Entity(parent=self.water_scene, model="sphere",
+                                position=(0, 1.2, 2.8), scale=(1.55, 2.2, 1.45),
+                                color=color.rgb32(115, 201, 216),
+                                shader=lit_with_shadows_shader)
+        Entity(parent=self.water_egg, model="sphere", position=(0, .02, .48),
+               scale=(.72, .78, .25), color=color.rgb32(193, 244, 239), unlit=True)
+        self.water_baby = Dragon(Vec3(0, .8, 2.8), water_palette,
+                                 scale=.62, parent=self.water_scene)
+        self.water_baby.entity.enabled = False
+        self.egg_shards = []
+        for shard_position, shard_rotation in (
+                ((-.7, .18, 2.45), (0, 0, 30)),
+                ((.65, .22, 2.52), (0, 0, -35)),
+                ((-.35, .08, 3.4), (20, 0, 25)),
+                ((.4, .12, 3.35), (-20, 0, -25))):
+            shard = Entity(parent=self.water_scene, model=Cone(),
+                           position=shard_position, rotation=shard_rotation,
+                           scale=(.32, .58, .32),
+                           color=color.rgb32(143, 218, 228), unlit=True,
+                           enabled=False)
+            self.egg_shards.append(shard)
+        self.water_quest = WaterJourneyQuest(
+            self, self.water_queen, self.water_baby, Dragon)
         self.speed = 11.5
         self.elapsed = 0
         self.lives = 3
@@ -243,7 +289,7 @@ class DragonFlightGame:
         self.hoop_challenge_active = False
         self.hoop_challenge_finished = False
         self.hoop_index = 0
-        self.hoop_time_remaining = 10.0
+        self.hoop_time_remaining = HoopQuest.TIME_LIMIT
         for _, hoop in self.hoop_stage.hoops:
             hoop.enabled = True
         self._create_hud()
@@ -297,6 +343,31 @@ class DragonFlightGame:
             text_color=color.rgb32(24, 55, 37),
             on_click=self.start_hoop_challenge)
         self.ok_challenge_button.enabled = False
+        self.clan_choice_buttons = []
+        for clan, position in (("Fire Clan", (-.23, -.16)),
+                               ("Water Clan", (.23, -.16)),
+                               ("Earth Clan", (-.23, -.29)),
+                               ("Sky Clan", (.23, -.29))):
+            self.clan_choice_buttons.append(
+                Button(text=clan, parent=camera.ui, position=position,
+                       scale=(.3, .085), color=color.rgb32(219, 239, 221),
+                       text_color=color.rgb32(24, 55, 37),
+                       on_click=lambda selected=clan: self.choose_clan(selected))
+            )
+        for button in self.clan_choice_buttons:
+            button.enabled = False
+        self.gender_choice_buttons = [
+            Button(text="Male", parent=camera.ui, position=(-.17, -.22),
+                   scale=(.25, .085), color=color.rgb32(219, 239, 221),
+                   text_color=color.rgb32(24, 55, 37),
+                   on_click=lambda: self.choose_hatching_gender("male")),
+            Button(text="Female", parent=camera.ui, position=(.17, -.22),
+                   scale=(.25, .085), color=color.rgb32(219, 239, 221),
+                   text_color=color.rgb32(24, 55, 37),
+                   on_click=lambda: self.choose_hatching_gender("female")),
+        ]
+        for button in self.gender_choice_buttons:
+            button.enabled = False
         self.hoop_status = Text("", parent=camera.ui, position=(0, .42),
                                 origin=(0, 0), scale=1.15,
                                 color=color.rgb32(39, 56, 37), enabled=False)
@@ -306,6 +377,10 @@ class DragonFlightGame:
             button.enabled = False
         self.challenge_button.enabled = False
         self.ok_challenge_button.enabled = False
+        for button in self.clan_choice_buttons:
+            button.enabled = False
+        for button in self.gender_choice_buttons:
+            button.enabled = False
 
     def _snap_camera(self, offset, look_offset):
         camera.position = self.player.entity.position + offset
@@ -317,16 +392,24 @@ class DragonFlightGame:
 
     def handle_input(self, key):
         if key == "r":
+            if self.won and self.dialogue_stage in (
+                    "clan_choice", "clan_selected", "water_gender_choice",
+                    "water_hatched"):
+                return
             self.active_quest.restart()
 
     def update(self):
         dt = min(time.dt, .04)
-        if self.active_quest is self.hoop_quest:
-            if self.hoop_quest.finished:
-                self.elapsed += dt
-                self.player.animate(self.elapsed)
-            else:
-                self.hoop_quest.update(dt)
+        if self.active_quest is self.water_quest:
+            self.water_quest.update(dt)
+            return
+        if self.active_quest is self.hoop_quest and not self.hoop_quest.finished:
+            self.hoop_quest.update(dt)
+            return
+        if (self.active_quest is self.hoop_quest and self.hoop_quest.finished
+                and not self.won):
+            self.elapsed += dt
+            self.player.animate(self.elapsed)
             return
         if self.active_quest.finished and not self.won:
             return
@@ -334,6 +417,15 @@ class DragonFlightGame:
             self.elapsed += dt
             self.player.animate(self.elapsed)
             self.room_dragon.animate(self.elapsed + 1.0)
+            if self.dialogue_stage in ("water_gender_choice", "water_hatched"):
+                self.water_queen.animate(self.elapsed + 1.5)
+            if self.dialogue_stage == "water_hatched":
+                self.water_baby.animate(self.elapsed + 2.0)
+                if self.elapsed >= self.dialogue_next_time:
+                    self.dialogue_stage = "water_journey"
+                    self.active_quest = self.water_quest
+                    self.water_quest.start()
+                    return
             if (self.dialogue_stage == "reply"
                     and self.elapsed >= self.dialogue_next_time):
                 self.room_message.text = "I have another challenge for you."
@@ -369,6 +461,95 @@ class DragonFlightGame:
         self.dialogue_next_time = None
         for button in self.choice_buttons:
             button.enabled = True
+        for button in self.clan_choice_buttons:
+            button.enabled = False
+
+    def _enter_clan_choice_room(self):
+        self.won = True
+        self.forest.root.enabled = False
+        self.hoop_stage.root.enabled = False
+        self.room.root.enabled = True
+        self.room_dragon.entity.enabled = True
+        self.hoop_status.enabled = False
+        for dragon in self.chasers:
+            dragon.entity.enabled = False
+        self.player.entity.position = Vec3(0, 2, 0)
+        self.player.entity.rotation = Vec3(0, 0, 0)
+        self.player.entity.alpha = 1
+        camera.position = Vec3(0, 6.2, -9.5)
+        camera.look_at(self.player.entity.position + Vec3(0, .4, 1.5))
+        window.color = color.white
+        for item in self.hud_items:
+            item.enabled = False
+        for button in self.choice_buttons:
+            button.enabled = False
+        self._disable_dialogue_buttons()
+        self.room_message.text = (
+            "It is time. You are strong enough to enter the real dragon world.\n"
+            "Choose one of the clans."
+        )
+        self.room_message.scale = .95
+        self.room_message.enabled = True
+        self.dialogue_stage = "clan_choice"
+        self.dialogue_next_time = None
+        for button in self.clan_choice_buttons:
+            button.enabled = True
+
+    def choose_clan(self, clan):
+        if not self.won or self.dialogue_stage != "clan_choice":
+            return
+        if clan == "Water Clan":
+            self._enter_water_egg_scene()
+            return
+        self.room_message.text = f"You have chosen the {clan}!"
+        self.dialogue_stage = "clan_selected"
+        for button in self.clan_choice_buttons:
+            button.enabled = False
+
+    def _enter_water_egg_scene(self):
+        self.room_dragon.entity.enabled = False
+        self.water_scene.enabled = True
+        self.water_queen.entity.enabled = True
+        self.water_egg.enabled = True
+        self.water_baby.entity.enabled = False
+        for shard in self.egg_shards:
+            shard.enabled = False
+        self.original_player.entity.enabled = False
+        self.player.entity.position = Vec3(0, .7, -.7)
+        self.player.entity.rotation = Vec3(0, 0, 0)
+        camera.position = Vec3(0, 5.2, -8.5)
+        camera.look_at(Vec3(0, 1.8, 3.8))
+        self.room_message.text = (
+            "The Water Clan has only one egg for now.\n"
+            "The Queen is very protective of it.\n"
+            "Will you hatch as male or female?"
+        )
+        self.room_message.scale = 1.0
+        self.room_message.enabled = True
+        self.dialogue_stage = "water_gender_choice"
+        for button in self.clan_choice_buttons:
+            button.enabled = False
+        for button in self.gender_choice_buttons:
+            button.enabled = True
+
+    def choose_hatching_gender(self, gender):
+        if not self.won or self.dialogue_stage != "water_gender_choice":
+            return
+        self.water_egg.enabled = False
+        for shard in self.egg_shards:
+            shard.enabled = True
+        self.water_baby.entity.enabled = True
+        self.water_baby.entity.rotation = Vec3(0, 180, 0)
+        self.player = self.water_baby
+        self.room_message.text = (
+            f"The egg cracks open! You hatch as a {gender} Water Dragon.\n"
+            "The Queen welcomes you into the royal family."
+        )
+        self.room_message.scale = 1.0
+        self.dialogue_stage = "water_hatched"
+        self.dialogue_next_time = self.elapsed + 2.5
+        for button in self.gender_choice_buttons:
+            button.enabled = False
 
     def choose_thank_you(self):
         self._choose_dialogue("You: Thank you!")
@@ -388,7 +569,10 @@ class DragonFlightGame:
     def ask_about_challenge(self):
         if not self.won or self.dialogue_stage != "challenge":
             return
-        self.room_message.text = "Fly through the ten yellow hoops in ten seconds!"
+        self.room_message.text = (
+            f"Fly through the {len(self.hoop_stage.hoops)} yellow hoops in "
+            f"{int(self.hoop_quest.TIME_LIMIT)} seconds!"
+        )
         self.dialogue_stage = "challenge_revealed"
         self.challenge_button.enabled = False
         self.ok_challenge_button.enabled = True

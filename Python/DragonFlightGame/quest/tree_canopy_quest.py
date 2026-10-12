@@ -18,6 +18,7 @@ class TreeCanopyQuest(Quest):
         game.elapsed = 0
         game.forest.root.enabled = True
         game.room.root.enabled = False
+        game.water_scene.enabled = False
         game.hoop_stage.root.enabled = False
         game.room_dragon.entity.enabled = False
         game.room_message.enabled = False
@@ -26,7 +27,7 @@ class TreeCanopyQuest(Quest):
         game.hoop_challenge_active = False
         game.hoop_challenge_finished = False
         game.hoop_index = 0
-        game.hoop_time_remaining = 10.0
+        game.hoop_time_remaining = game.hoop_quest.TIME_LIMIT
         game.dialogue_stage = None
         game.dialogue_next_time = None
         for item in game.hud_items:
@@ -135,16 +136,16 @@ class TreeCanopyQuest(Quest):
         for index, dragon in enumerate(game.chasers):
             phase = game.elapsed * 1.2 + index * math.pi
             enemy = dragon.entity
-            target = player.position + Vec3(math.sin(phase) * 3.1,
-                                            1.2 + math.sin(phase * 1.6) * 1.1,
-                                            -5.5 - index * 2.0)
-            enemy.position = lerp(enemy.position, target, min(1, dt * 1.25))
+            target = player.position + Vec3(math.sin(phase) * 2.2,
+                                            .9 + math.sin(phase * 1.6) * .8,
+                                            -2.4 - index * 1.5)
+            enemy.position = lerp(enemy.position, target, min(1, dt * 8))
             enemy.x = max(-game.FOREST_WIDTH + 1,
                           min(game.FOREST_WIDTH - 1, enemy.x))
             enemy.y = max(1.5, min(game.FLIGHT_CEILING, enemy.y))
             enemy.look_at(player.position)
             dragon.animate(game.elapsed + index * .5)
             if (game.invulnerable <= 0
-                    and distance(enemy.position, player.position) < 2.1):
+                    and distance(enemy.position, player.position) < 3.0):
                 self._lose_life("CHASER HIT")
                 break

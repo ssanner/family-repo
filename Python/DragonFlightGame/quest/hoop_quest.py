@@ -1,4 +1,4 @@
-"""Timed flight quest: pass through all ten hoops before time runs out."""
+"""Timed flight quest: pass through all hoops before time runs out."""
 
 from ursina import *
 
@@ -6,11 +6,13 @@ from .quest import Quest
 
 
 class HoopQuest(Quest):
+    TIME_LIMIT = 20.0
+
     def __init__(self, game, hoop_stage):
         super().__init__(game)
         self.hoop_stage = hoop_stage
         self.hoop_index = 0
-        self.time_remaining = 10.0
+        self.time_remaining = self.TIME_LIMIT
 
     def start(self):
         game = self.game
@@ -20,6 +22,7 @@ class HoopQuest(Quest):
         game.game_over = False
         game.dialogue_stage = "hoop_challenge"
         game.room.root.enabled = False
+        game.water_scene.enabled = False
         game.room_dragon.entity.enabled = False
         game.forest.root.enabled = False
         self.hoop_stage.root.enabled = True
@@ -31,14 +34,17 @@ class HoopQuest(Quest):
         game.player.entity.rotation = Vec3(0, 0, 0)
         game.player.entity.alpha = 1
         self.hoop_index = 0
-        self.time_remaining = 10.0
+        self.time_remaining = self.TIME_LIMIT
         for _, hoop in self.hoop_stage.hoops:
             hoop.enabled = True
         game.hoop_index = 0
         game.hoop_time_remaining = self.time_remaining
         game.hoop_challenge_active = True
         game.hoop_challenge_finished = False
-        game.hoop_status.text = "HOOPS 0/10    TIME 10.0s"
+        game.hoop_status.text = (
+            f"HOOPS 0/{len(self.hoop_stage.hoops)}    "
+            f"TIME {self.TIME_LIMIT:.1f}s"
+        )
         game.hoop_status.enabled = True
         window.color = color.rgb32(194, 226, 231)
         game._snap_camera(Vec3(0, 6, -13), Vec3(0, .7, 12))
@@ -81,13 +87,14 @@ class HoopQuest(Quest):
         game.hoop_index = self.hoop_index
         game.hoop_time_remaining = self.time_remaining
         game.hoop_status.text = (
-            f"HOOPS {self.hoop_index}/10    TIME {max(0, self.time_remaining):.1f}s"
+            f"HOOPS {self.hoop_index}/{len(self.hoop_stage.hoops)}    "
+            f"TIME {max(0, self.time_remaining):.1f}s"
         )
         camera.position = lerp(camera.position,
                                player.position + Vec3(0, 6, -13), dt * 3)
         camera.look_at(player.position + Vec3(0, .7, 12))
         if self.hoop_index == len(self.hoop_stage.hoops):
-            self._finish("ALL TEN HOOPS! Challenge complete!")
+            self._finish("ALL HOOPS! Challenge complete!")
         elif self.time_remaining <= 0:
             self._finish("TIME UP! Press R to retry")
 
@@ -96,3 +103,5 @@ class HoopQuest(Quest):
         self.game.hoop_challenge_active = False
         self.game.hoop_challenge_finished = True
         self.game.hoop_status.text = message
+        if self.hoop_index == len(self.hoop_stage.hoops):
+            self.game._enter_clan_choice_room()
