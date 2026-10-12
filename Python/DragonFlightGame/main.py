@@ -5,7 +5,7 @@ import random
 from ursina import *
 from ursina.models.procedural.cone import Cone
 from ursina.shaders import lit_with_shadows_shader
-from quest import HoopQuest, TreeCanopyQuest
+from quest import FireClanQuest, HoopQuest, TreeCanopyQuest
 from quest import WaterJourneyQuest
 
 
@@ -266,6 +266,7 @@ class DragonFlightGame:
         self.water_baby = Dragon(Vec3(0, .8, 2.8), water_palette,
                                  scale=.62, parent=self.water_scene)
         self.water_baby.entity.enabled = False
+        self.hatching_gender = None
         self.egg_shards = []
         for shard_position, shard_rotation in (
                 ((-.7, .18, 2.45), (0, 0, 30)),
@@ -293,6 +294,7 @@ class DragonFlightGame:
         for _, hoop in self.hoop_stage.hoops:
             hoop.enabled = True
         self._create_hud()
+        self.fire_quest = FireClanQuest(self, Dragon)
         self.tree_canopy_quest = TreeCanopyQuest(self, self.forest)
         self.hoop_quest = HoopQuest(self, self.hoop_stage)
         self.active_quest = self.tree_canopy_quest
@@ -400,6 +402,9 @@ class DragonFlightGame:
 
     def update(self):
         dt = min(time.dt, .04)
+        if self.active_quest is self.fire_quest:
+            self.fire_quest.update(dt)
+            return
         if self.active_quest is self.water_quest:
             self.water_quest.update(dt)
             return
@@ -501,6 +506,11 @@ class DragonFlightGame:
         if clan == "Water Clan":
             self._enter_water_egg_scene()
             return
+        if clan == "Fire Clan":
+            for button in self.clan_choice_buttons:
+                button.enabled = False
+            self.fire_quest.start()
+            return
         self.room_message.text = f"You have chosen the {clan}!"
         self.dialogue_stage = "clan_selected"
         for button in self.clan_choice_buttons:
@@ -535,6 +545,7 @@ class DragonFlightGame:
     def choose_hatching_gender(self, gender):
         if not self.won or self.dialogue_stage != "water_gender_choice":
             return
+        self.hatching_gender = gender
         self.water_egg.enabled = False
         for shard in self.egg_shards:
             shard.enabled = True

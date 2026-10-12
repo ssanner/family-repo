@@ -4,5 +4,7 @@ from .quest import Quest
 from .tree_canopy_quest import TreeCanopyQuest
 from .hoop_quest import HoopQuest
 from .water_journey_quest import WaterJourneyQuest
+from .fire_clan_quest import FireClanQuest
 
-__all__ = ["Quest", "TreeCanopyQuest", "HoopQuest", "WaterJourneyQuest"]
+__all__ = ["Quest", "TreeCanopyQuest", "HoopQuest", "WaterJourneyQuest",
+           "FireClanQuest"]
