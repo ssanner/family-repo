@@ -25,4 +25,4 @@ python -m pip install -r requirements.txt
 - **Space**: fly faster for a short burst while held
 - **R**: restart the run
 
-Stay low under the canopy and steer through gaps between the trunks. A tree or chaser strike costs one of your three hearts. Reach the beacon in the forest clearing to teleport into a blank white room with your dragon. Choose **Thank you!** or **OK** when the other dragon congratulates you, then hear about its next challenge.
+Steer through gaps between trunks and adjust your altitude as tree crowns vary in height. The route has alternating high and low clearances: climb above the brush, then dive under low branches. A tree or chaser strike costs one of your three hearts. Reach the beacon in the forest clearing to teleport into a blank white room with your dragon. Choose **Thank you!** or **OK** when the other dragon congratulates you, then hear about its next challenge.

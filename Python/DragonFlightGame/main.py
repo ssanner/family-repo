@@ -12,7 +12,7 @@ FOREST_START = 16
 FOREST_END = GOAL_Z - 9
 FOREST_WIDTH = 23
 CANOPY_HEIGHT = 14
-FLIGHT_CEILING = 6.2
+FLIGHT_CEILING = 10.5
 PLAYER_START = Vec3(0, 5, 0)
 HUD_COLOR = color.rgb32(28, 45, 39)
 
@@ -23,6 +23,7 @@ class Forest:
     def __init__(self, seed=12):
         self.random = random.Random(seed)
         self.tree_colliders = []
+        self.altitude_gates = []
         self.root = Entity(name="forest_world")
         self._build_ground()
         self._build_trees()
@@ -57,7 +58,10 @@ class Forest:
                     continue
                 x = lane_x + self.random.uniform(-1.0, 1.0)
                 tree_z = z + (6.0 if row % 2 else 0) + self.random.uniform(-1, 1)
-                trunk_height = self.random.uniform(8.2, 10.5)
+                # Crown height varies across the forest. Each trunk grows into
+                # its crown so the tree reads as one connected shape.
+                canopy_center_y = self.random.uniform(7.6, 11.4)
+                trunk_height = canopy_center_y + .3
                 trunk_width = self.random.uniform(.65, .95)
                 bark = self.random.choice((color.rgb32(101, 69, 48),
                                            color.rgb32(117, 78, 51),
@@ -72,7 +76,7 @@ class Forest:
                 # Roots widen the base and make the trunk silhouette readable.
                 Entity(parent=self.root, model="sphere", position=(x, -.66, tree_z),
                        scale=(trunk_width * 2.2, .3, trunk_width * 2.2), color=bark)
-                crown_y = trunk_height - .8
+                crown_y = canopy_center_y
                 for dx, dy, dz, size in ((0, 1.0, 0, 4.2), (-1.25, .45, .1, 3.25),
                                          (1.2, .35, -.25, 3.35), (.1, .45, 1.1, 3.1)):
                     Entity(parent=self.root, model="sphere",
@@ -82,7 +86,35 @@ class Forest:
                 # Collision is intentionally trunk-focused: fly between trunks
                 # while staying beneath the leafy canopy.
                 self.tree_colliders.append((x, tree_z, trunk_width + .85,
-                                            trunk_height - .1))
+                                            canopy_center_y - .5, canopy_center_y))
+
+        # Alternating clearances turn the canopy into a vertical route: rise
+        # above the brush on some rows, then duck under a low branch on others.
+        gate_specs = ((40, 2.5, 4.2), (86, 4.7, 6.3), (132, 2.4, 4.0),
+                      (178, 5.0, 6.5), (224, 3.2, 5.0))
+        for gate_z, opening_low, opening_high in gate_specs:
+            self.altitude_gates.append((gate_z, opening_low, opening_high))
+            brush_top = opening_low - .55
+            for x in range(-21, 22, 3):
+                Entity(parent=self.root, model="sphere",
+                       position=(x, (-.8 + brush_top) / 2, gate_z),
+                       scale=(3.1, brush_top + .8, 1.8),
+                       color=color.rgb32(46, 101, 53),
+                       shader=lit_with_shadows_shader)
+
+            # A low limb spans the route above the opening and gives a visible
+            # cue for the safe altitude band.
+            Entity(parent=self.root, model=Cylinder(),
+                   position=(FOREST_WIDTH, opening_high + 1.65, gate_z),
+                   scale=(.75, FOREST_WIDTH * 2, .75), rotation_z=90,
+                   color=color.rgb32(92, 65, 43),
+                   shader=lit_with_shadows_shader)
+            for x in range(-21, 22, 3):
+                Entity(parent=self.root, model="sphere",
+                       position=(x, opening_high + 2.1, gate_z),
+                       scale=(3.2, 1.9, 1.8),
+                       color=color.rgb32(47, 111, 58),
+                       shader=lit_with_shadows_shader)
 
     def _build_goal(self):
         goal_z = GOAL_Z
@@ -212,7 +244,7 @@ class DragonFlightGame:
             "WASD / arrows: steer     SPACE: burst of speed     R: restart",
             parent=camera.ui, position=(-.86, .405), scale=.72, color=HUD_COLOR))
         self.hud_items.append(Text(
-            "WEAVE BETWEEN TRUNKS  ·  STAY BELOW THE CANOPY  ·  REACH THE BEACON",
+            "WEAVE BETWEEN TRUNKS  ·  CLIMB AND DIVE THROUGH GAPS  ·  REACH THE BEACON",
             parent=camera.ui, position=(-.86, .375), scale=.64,
             color=color.rgb32(45, 105, 66)))
         self.progress_text = Text("", parent=camera.ui, position=(-.86, .34),
@@ -313,10 +345,20 @@ class DragonFlightGame:
 
     def _hits_tree(self):
         player = self.player.entity
-        for x, z, radius, height in self.forest.tree_colliders:
-            if (abs(player.z - z) < 1.35
-                    and abs(player.x - x) < radius + .55
-                    and player.y < height - .4):
+        for x, z, radius, trunk_top, canopy_center_y in self.forest.tree_colliders:
+            close_to_trunk = (abs(player.z - z) < 1.35
+                              and abs(player.x - x) < radius + .55)
+            trunk_hit = close_to_trunk and player.y < trunk_top + .45
+            canopy_hit = (
+                math.hypot(player.x - x, player.z - z) < 2.25
+                and player.y + 1.0 > canopy_center_y - .75
+                and player.y - .45 < canopy_center_y + 1.7
+            )
+            if trunk_hit or canopy_hit:
+                return True
+        for gate_z, opening_low, opening_high in self.forest.altitude_gates:
+            if (abs(player.z - gate_z) < 1.5
+                    and not opening_low <= player.y <= opening_high):
                 return True
         return False
 
