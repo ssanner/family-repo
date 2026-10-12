@@ -17,23 +17,24 @@ HUD_COLOR = color.rgb32(20, 44, 64)
 # scene's bright ambient and sun lighting from washing its detail out.
 ROCK_TEXTURE_TINT = color.rgb32(170, 160, 145)
 NEST_ISLAND_ROCK_TINT = color.rgb32(190, 180, 163)
-TEXTURE_FOLDER = Path(__file__).resolve().parent / "assets" / "textures"
-TEXTURE_CACHE = {}
-
-
-def game_texture(filename):
-    """Load an optional texture from this project's local texture directory."""
-    if filename not in TEXTURE_CACHE:
-        path = TEXTURE_FOLDER / filename
-        TEXTURE_CACHE[filename] = (
-            load_texture(path.name, folder=TEXTURE_FOLDER)
-            if path.is_file() else None
-        )
-    return TEXTURE_CACHE[filename]
 
 
 class LandscapeFeatures(ABC):
     """Contract for a feature that adds scenery to the Ursina scene."""
+
+    texture_folder = Path(__file__).resolve().parent / "assets" / "textures"
+    _texture_cache = {}
+
+    @classmethod
+    def game_texture(cls, filename):
+        """Load and cache an optional texture used by landscape features."""
+        if filename not in cls._texture_cache:
+            path = cls.texture_folder / filename
+            cls._texture_cache[filename] = (
+                load_texture(path.name, folder=cls.texture_folder)
+                if path.is_file() else None
+            )
+        return cls._texture_cache[filename]
 
     @abstractmethod
     def build(self):
@@ -54,7 +55,7 @@ class IslandFeature(LandscapeFeatures):
     def build(self):
         root = Entity(position=self.position)
         radius = 7.8 if self.index == 0 else 6.5
-        cliff_texture = game_texture("Rocks011_1K-JPG_Color.jpg")
+        cliff_texture = self.game_texture("Rocks011_1K-JPG_Color.jpg")
         for layer in range(4):
             width = radius * (1.0 - layer * .075)
             Entity(parent=root, model=Cylinder(), position=(0, -1.2 - layer * 1.35, 0),
@@ -113,7 +114,7 @@ class EnvelopingIslandFeature(LandscapeFeatures):
         self.colliders = []
 
     def build(self):
-        ground_texture = game_texture("Rocks011_1K-JPG_Color.jpg")
+        ground_texture = self.game_texture("Rocks011_1K-JPG_Color.jpg")
         cliff_texture = ground_texture
         Entity(model=Cylinder(), position=(0, -13.5, 104), scale=(82, 7, 252),
                color=ROCK_TEXTURE_TINT, texture=ground_texture,
@@ -157,7 +158,7 @@ class RockArchFeature(LandscapeFeatures):
         pier_bottom = -6.5
         pier_height = self.spring_y - pier_bottom
         pier_center_y = pier_bottom + pier_height / 2
-        arch_texture = game_texture("Rocks011_1K-JPG_Color.jpg")
+        arch_texture = self.game_texture("Rocks011_1K-JPG_Color.jpg")
         for side in (-1, 1):
             Entity(model=Cylinder(),
                    position=(self.center.x + side * pier_x, pier_bottom, self.center.z),
