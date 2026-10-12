@@ -94,27 +94,14 @@ class Forest:
                       (178, 5.0, 6.5), (224, 3.2, 5.0))
         for gate_z, opening_low, opening_high in gate_specs:
             self.altitude_gates.append((gate_z, opening_low, opening_high))
-            brush_top = opening_low - .55
-            for x in range(-21, 22, 3):
-                Entity(parent=self.root, model="sphere",
-                       position=(x, (-.8 + brush_top) / 2, gate_z),
-                       scale=(3.1, brush_top + .8, 1.8),
-                       color=color.rgb32(46, 101, 53),
-                       shader=lit_with_shadows_shader)
-
             # A low limb spans the route above the opening and gives a visible
-            # cue for the safe altitude band.
+            # cue for the safe altitude band. The lower clearance is left open,
+            # avoiding an artificial hedge wall across the forest floor.
             Entity(parent=self.root, model=Cylinder(),
                    position=(FOREST_WIDTH, opening_high + 1.65, gate_z),
                    scale=(.75, FOREST_WIDTH * 2, .75), rotation_z=90,
                    color=color.rgb32(92, 65, 43),
                    shader=lit_with_shadows_shader)
-            for x in range(-21, 22, 3):
-                Entity(parent=self.root, model="sphere",
-                       position=(x, opening_high + 2.1, gate_z),
-                       scale=(3.2, 1.9, 1.8),
-                       color=color.rgb32(47, 111, 58),
-                       shader=lit_with_shadows_shader)
 
     def _build_goal(self):
         goal_z = GOAL_Z
@@ -269,6 +256,12 @@ class DragonFlightGame:
         ]
         for button in self.choice_buttons:
             button.enabled = False
+        self.challenge_button = Button(
+            text="What is the challenge?", parent=camera.ui, position=(0, -.22),
+            scale=(.38, .085), color=color.rgb32(219, 239, 221),
+            text_color=color.rgb32(24, 55, 37),
+            on_click=self.ask_about_challenge)
+        self.challenge_button.enabled = False
 
     def reset_run(self):
         self.forest.root.enabled = True
@@ -277,6 +270,7 @@ class DragonFlightGame:
         self.room_message.enabled = False
         for button in self.choice_buttons:
             button.enabled = False
+        self.challenge_button.enabled = False
         self.dialogue_stage = None
         self.dialogue_next_time = None
         for item in self.hud_items:
@@ -309,6 +303,7 @@ class DragonFlightGame:
                     and self.elapsed >= self.dialogue_next_time):
                 self.room_message.text = "I have another challenge for you."
                 self.dialogue_stage = "challenge"
+                self.challenge_button.enabled = True
             return
         if self.game_over:
             return
@@ -434,6 +429,13 @@ class DragonFlightGame:
         self.dialogue_next_time = self.elapsed + 1.2
         for button in self.choice_buttons:
             button.enabled = False
+
+    def ask_about_challenge(self):
+        if not self.won or self.dialogue_stage != "challenge":
+            return
+        self.room_message.text = "Fly through the ten yellow hoops in ten seconds!"
+        self.dialogue_stage = "challenge_revealed"
+        self.challenge_button.enabled = False
 
 
 game = None
