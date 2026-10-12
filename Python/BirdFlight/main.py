@@ -150,6 +150,105 @@ class PredatorAvatar(GameAvatars):
             wing.rotation_z = side * (-18 + math.sin(phase * 5) * 38)
 
 
+class FlockingBird(GameAvatars):
+    """A small, non-hostile bird steered by its flock's boid rules."""
+
+    def __init__(self, position):
+        self.entity = self.build(position)
+        self.entity.scale = .68
+        self.velocity = 4.0 *Vec3(random.uniform(-1, 1), random.uniform(-.5, .5),
+                             random.uniform(-.8, .8))
+        self.phase = random.uniform(0, math.tau)
+
+    def build(self, position):
+        body = Entity(position=position)
+        Entity(parent=body, model="sphere", scale=(1.2, .7, 1.5),
+               color=color.rgb32(39, 151, 168))
+        Entity(parent=body, model="sphere", position=(0, .38, .83), scale=(.58, .56, .58),
+               color=color.rgb32(91, 198, 184))
+        Entity(parent=body, model=Cone(), position=(0, .25, 1.4), rotation_x=90,
+               scale=(.26, .5, .26), color=color.rgb32(244, 181, 75))
+        for side in (-1, 1):
+            Entity(parent=body, model="sphere", position=(side * .25, .56, 1.02),
+                   scale=.11, color=color.white)
+            Entity(parent=body, model="sphere", position=(side * .28, .57, 1.1),
+                   scale=.055, color=color.rgb32(20, 45, 55))
+        self.wings = []
+        for side in (-1, 1):
+            wing = Entity(parent=body, model="sphere", position=(side * .73, .02, -.08),
+                          scale=(.32, .14, 1.0), rotation_z=side * -14,
+                          color=color.rgb32(29, 112, 139))
+            self.wings.append((wing, side))
+        body.position = position
+        return body
+
+    def animate(self, phase):
+        for wing, side in self.wings:
+            wing.rotation_z = side * (-14 + math.sin(phase + self.phase) * 32)
+
+
+class BirdFlock:
+    """A wandering obstacle group with cohesion, alignment, and separation."""
+
+    def __init__(self, center, bird_count=6):
+        self.anchor = Vec3(*center)
+        self.birds = []
+        self.wander_target = Vec3(0, 0, 0)
+        self.wander_timer = 0
+        for _ in range(bird_count):
+            offset = Vec3(random.uniform(-2.4, 2.4), random.uniform(-1.4, 1.4),
+                          random.uniform(-2.4, 2.4))
+            self.birds.append(FlockingBird(self.anchor + offset))
+
+    @staticmethod
+    def _limit(vector, maximum):
+        length = vector.length()
+        return vector.normalized() * maximum if length > maximum else vector
+
+    def update(self, dt, elapsed_time):
+        self.wander_timer -= dt
+        if self.wander_timer <= 0:
+            self.wander_timer = random.uniform(1.0, 2.2)
+            self.wander_target = Vec3(random.uniform(-5.0, 5.0),
+                                      random.uniform(-3.0, 3.0),
+                                      random.uniform(-2.5, 2.5))
+
+        positions = [bird.entity.position for bird in self.birds]
+        center = Vec3(0, 0, 0)
+        average_velocity = Vec3(0, 0, 0)
+        for bird, position in zip(self.birds, positions):
+            center += position
+            average_velocity += bird.velocity
+        center /= len(self.birds)
+        average_velocity /= len(self.birds)
+        for index, bird in enumerate(self.birds):
+            cohesion = (center - bird.entity.position) * .34
+            alignment = (average_velocity - bird.velocity) * .55
+            separation = Vec3(0, 0, 0)
+            for other_index, other in enumerate(self.birds):
+                if other_index == index:
+                    continue
+                away = bird.entity.position - other.entity.position
+                gap = away.length()
+                if .001 < gap < 2.1:
+                    separation += away.normalized() * ((2.1 - gap) * .95)
+
+            desired = self.anchor + self.wander_target
+            wander = (desired - bird.entity.position) * .16
+            velocity = bird.velocity + (cohesion + alignment + separation + wander) * dt
+            bird.velocity = self._limit(velocity, 2.8)
+            bird.entity.position += bird.velocity * dt
+            bird.entity.x = max(self.anchor.x - 8, min(self.anchor.x + 8, bird.entity.x))
+            bird.entity.y = max(1, min(20, bird.entity.y))
+            bird.entity.z = max(self.anchor.z - 5, min(self.anchor.z + 5, bird.entity.z))
+            if bird.velocity.length() > .1:
+                bird.entity.look_at(bird.entity.position + bird.velocity)
+            bird.animate(elapsed_time * 7)
+
+    def collides_with(self, position, radius=1.55):
+        return any(distance(bird.entity.position, position) < radius for bird in self.birds)
+
+
 class BirdFlightGame:
     def __init__(self):
         random.seed(12)
@@ -167,6 +266,12 @@ class BirdFlightGame:
             PredatorAvatar(start + Vec3(-9, random.uniform(-1.5, 1.5), -8)),
             PredatorAvatar(start + Vec3(10, random.uniform(-1.5, 1.5), -8)),
         ]
+        self.flocks = []
+        for index in range(len(ROUTE) - 1):
+            x1, y1, z1 = ROUTE[index]
+            x2, y2, z2 = ROUTE[index + 1]
+            center = ((x1 + x2) / 2, (y1 + y2) / 2 + 1.5, (z1 + z2) / 2)
+            self.flocks.append(BirdFlock(center, bird_count=6))
         self._create_hud()
         self.speed_z = 8.6
         self.reset_run()
@@ -176,6 +281,9 @@ class BirdFlightGame:
              color=HUD_COLOR)
         Text("WASD / arrows: steer     SPACE: flap boost     R: restart",
              parent=camera.ui, position=(-.86, .405), scale=.75, color=HUD_COLOR)
+        Text("DODGE THE TEAL FLOCKS",
+             parent=camera.ui, position=(-.86, .375), scale=.65,
+             color=color.rgb32(19, 112, 125))
         self.progress_text = Text("", parent=camera.ui, position=(-.86, .34),
                                   scale=.9, color=HUD_COLOR)
         self.status_text = Text("", parent=camera.ui, origin=(0, 0), position=(0, .34),
@@ -190,9 +298,14 @@ class BirdFlightGame:
         self.invulnerable = 1.5
         self.game_over = False
         self.won = False
-        self.bird.entity.position = Vec3(ROUTE[0][0], ROUTE[0][1] + 2.0, ROUTE[0][2] - 3)
+        bird = self.bird.entity
+        bird.position = Vec3(ROUTE[0][0], ROUTE[0][1] + 2.0, ROUTE[0][2] - 3)
+        bird.rotation = Vec3(0, 0, 0)
+        camera.position = bird.position + Vec3(0, 9.5, -23)
+        camera.rotation = Vec3(0, 0, 0)
+        camera.look_at(bird.position + Vec3(0, 1.5, 12))
         for index, predator in enumerate(self.predators):
-            predator.entity.position = self.bird.entity.position + Vec3((-5, 5)[index], 0, -6)
+            predator.entity.position = bird.position + Vec3((-5, 5)[index], 0, -6)
         self.status_text.text = ""
 
     def lose_life(self):
@@ -244,6 +357,7 @@ class BirdFlightGame:
 
         if not self._check_checkpoint():
             return
+        self._update_flocks(dt)
         self._update_predators(dt)
         self._update_camera_and_hud()
 
@@ -290,6 +404,17 @@ class BirdFlightGame:
             if self.invulnerable <= 0 and distance(enemy.position, bird.position) < 2.35:
                 self.lose_life()
                 break
+
+    def _update_flocks(self, dt):
+        bird_position = self.bird.entity.position
+        for flock in self.flocks:
+            flock.update(dt, time.time())
+            if self.invulnerable <= 0 and flock.collides_with(bird_position):
+                self.lose_life()
+                if not self.game_over:
+                    self.status_text.text = "Flock collision — back at your last nest"
+                    self.status_text.color = HUD_COLOR
+                return
 
     def _update_camera_and_hud(self):
         bird = self.bird.entity

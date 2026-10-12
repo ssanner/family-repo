@@ -34,7 +34,7 @@ Then activate `.venv313` and continue with the install steps above. The existing
 - **Space**: flap boost and fly faster
 - **R**: restart
 
-Reach the gold nest marker on each island to save your progress. Nests restore one heart, up to three. Three predator strikes end the flight; your current nest is your respawn point.
+Reach the gold nest marker on each island to save your progress. Nests restore one heart, up to three. Three predator strikes end the flight; your current nest is your respawn point. Teal bird flocks wander through the gaps between islands; they keep together but do not pursue you, and a collision costs a life. Steer around them or climb above them.
 
 The world and birds are drawn from Ursina's built-in 3D primitives, so there are no external art assets to download.
 
