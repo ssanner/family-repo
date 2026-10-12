@@ -5,6 +5,7 @@ import random
 from ursina import *
 from ursina.models.procedural.cone import Cone
 from ursina.shaders import lit_with_shadows_shader
+from quest import HoopQuest, TreeCanopyQuest
 
 
 GOAL_Z = 270
@@ -77,16 +78,20 @@ class Forest:
                 Entity(parent=self.root, model="sphere", position=(x, -.66, tree_z),
                        scale=(trunk_width * 2.2, .3, trunk_width * 2.2), color=bark)
                 crown_y = canopy_center_y
+                canopy_colliders = []
                 for dx, dy, dz, size in ((0, 1.0, 0, 4.2), (-1.25, .45, .1, 3.25),
                                          (1.2, .35, -.25, 3.35), (.1, .45, 1.1, 3.1)):
                     Entity(parent=self.root, model="sphere",
                            position=(x + dx, crown_y + dy, tree_z + dz),
                            scale=(size, size * .8, size), color=crown_color,
                            shader=lit_with_shadows_shader)
+                    canopy_colliders.append((x + dx, crown_y + dy, tree_z + dz,
+                                             size * .5, size * .4, size * .5))
                 # Collision is intentionally trunk-focused: fly between trunks
                 # while staying beneath the leafy canopy.
-                self.tree_colliders.append((x, tree_z, trunk_width + .85,
-                                            canopy_center_y - .5, canopy_center_y))
+                self.tree_colliders.append((x, tree_z, trunk_width * .5,
+                                            -.8, canopy_center_y - .5,
+                                            canopy_colliders))
 
         # Alternating clearances turn the canopy into a vertical route: rise
         # above the brush on some rows, then duck under a low branch on others.
@@ -94,14 +99,6 @@ class Forest:
                       (178, 5.0, 6.5), (224, 3.2, 5.0))
         for gate_z, opening_low, opening_high in gate_specs:
             self.altitude_gates.append((gate_z, opening_low, opening_high))
-            # A low limb spans the route above the opening and gives a visible
-            # cue for the safe altitude band. The lower clearance is left open,
-            # avoiding an artificial hedge wall across the forest floor.
-            Entity(parent=self.root, model=Cylinder(),
-                   position=(FOREST_WIDTH, opening_high + 1.65, gate_z),
-                   scale=(.75, FOREST_WIDTH * 2, .75), rotation_z=90,
-                   color=color.rgb32(92, 65, 43),
-                   shader=lit_with_shadows_shader)
 
     def _build_goal(self):
         goal_z = GOAL_Z
@@ -141,6 +138,31 @@ class WhiteRoom:
         for z in (-12, 12):
             Entity(parent=self.root, model="cube", position=(0, 5, z),
                    scale=(24, 11, .7), color=wall_color, unlit=True)
+
+
+class HoopStage:
+    """An open flight lane with ten visible hoops arranged in a 3D path."""
+
+    def __init__(self):
+        self.root = Entity(name="hoop_stage", enabled=False)
+        Entity(parent=self.root, model="plane", position=(0, -.8, 48),
+               scale=(48, 1, 125), color=color.rgb32(184, 222, 224), unlit=True)
+        Entity(parent=self.root, model="cube", position=(0, 18, 48),
+               scale=(48, .5, 125), color=color.rgb32(198, 229, 229), unlit=True)
+        centers = ((-3.5, 4.4), (1.0, 6.0), (4.5, 3.5), (0.0, 2.8),
+                   (-4.0, 6.2), (-1.0, 7.1), (4.0, 5.0), (1.5, 3.1),
+                   (-3.7, 4.7), (0.5, 6.3))
+        self.hoops = []
+        for index, (x, y) in enumerate(centers):
+            z = 9 + index * 8.5
+            hoop = Entity(parent=self.root, position=(x, y, z))
+            for segment in range(24):
+                angle = math.tau * segment / 24
+                Entity(parent=hoop, model="sphere",
+                       position=(math.cos(angle) * 3.0,
+                                 math.sin(angle) * 3.0, 0),
+                       scale=.62, color=color.rgb32(255, 205, 35), unlit=True)
+            self.hoops.append((Vec3(x, y, z), hoop))
 
 
 class Dragon:
@@ -186,6 +208,11 @@ class Dragon:
 
 
 class DragonFlightGame:
+    GOAL_Z = GOAL_Z
+    FOREST_WIDTH = FOREST_WIDTH
+    FLIGHT_CEILING = FLIGHT_CEILING
+    PLAYER_START = PLAYER_START
+
     def __init__(self):
         random.seed(12)
         AmbientLight(color=color.rgb32(168, 190, 162))
@@ -194,6 +221,7 @@ class DragonFlightGame:
         sun.look_at(Vec3(-.3, -.8, -.4))
         self.forest = Forest()
         self.room = WhiteRoom()
+        self.hoop_stage = HoopStage()
         self.player = Dragon(PLAYER_START,
                              (color.rgb32(48, 130, 105),
                               color.rgb32(39, 91, 81),
@@ -220,8 +248,17 @@ class DragonFlightGame:
         self.invulnerable = 1.5
         self.game_over = False
         self.won = False
+        self.hoop_challenge_active = False
+        self.hoop_challenge_finished = False
+        self.hoop_index = 0
+        self.hoop_time_remaining = 10.0
+        for _, hoop in self.hoop_stage.hoops:
+            hoop.enabled = True
         self._create_hud()
-        self.reset_run()
+        self.tree_canopy_quest = TreeCanopyQuest(self, self.forest)
+        self.hoop_quest = HoopQuest(self, self.hoop_stage)
+        self.active_quest = self.tree_canopy_quest
+        self.active_quest.start()
 
     def _create_hud(self):
         self.hud_items = []
@@ -262,39 +299,45 @@ class DragonFlightGame:
             text_color=color.rgb32(24, 55, 37),
             on_click=self.ask_about_challenge)
         self.challenge_button.enabled = False
+        self.ok_challenge_button = Button(
+            text="OK", parent=camera.ui, position=(0, -.22),
+            scale=(.2, .085), color=color.rgb32(219, 239, 221),
+            text_color=color.rgb32(24, 55, 37),
+            on_click=self.start_hoop_challenge)
+        self.ok_challenge_button.enabled = False
+        self.hoop_status = Text("", parent=camera.ui, position=(0, .42),
+                                origin=(0, 0), scale=1.15,
+                                color=color.rgb32(39, 56, 37), enabled=False)
 
-    def reset_run(self):
-        self.forest.root.enabled = True
-        self.room.root.enabled = False
-        self.room_dragon.entity.enabled = False
-        self.room_message.enabled = False
+    def _disable_dialogue_buttons(self):
         for button in self.choice_buttons:
             button.enabled = False
         self.challenge_button.enabled = False
-        self.dialogue_stage = None
-        self.dialogue_next_time = None
-        for item in self.hud_items:
-            item.enabled = True
-        window.color = color.rgb32(132, 184, 177)
-        self.player.entity.position = Vec3(PLAYER_START)
-        self.player.entity.rotation = Vec3(0, 0, 0)
-        self.lives = 3
-        self.invulnerable = 1.5
-        self.game_over = False
-        self.won = False
-        self.status_text.text = ""
-        for index, dragon in enumerate(self.chasers):
-            dragon.entity.enabled = True
-            dragon.entity.position = Vec3((-1 if index == 0 else 1) * 3,
-                                          5 + index, -8 - index * 4)
-        self._update_camera()
+        self.ok_challenge_button.enabled = False
+
+    def _snap_camera(self, offset, look_offset):
+        camera.position = self.player.entity.position + offset
+        camera.look_at(self.player.entity.position + look_offset)
+        camera.rotation_z = 0
+
+    def reset_run(self):
+        self.active_quest.restart()
 
     def handle_input(self, key):
         if key == "r":
-            self.reset_run()
+            self.active_quest.restart()
 
     def update(self):
         dt = min(time.dt, .04)
+        if self.active_quest is self.hoop_quest:
+            if self.hoop_quest.finished:
+                self.elapsed += dt
+                self.player.animate(self.elapsed)
+            else:
+                self.hoop_quest.update(dt)
+            return
+        if self.active_quest.finished and not self.won:
+            return
         if self.won:
             self.elapsed += dt
             self.player.animate(self.elapsed)
@@ -305,87 +348,7 @@ class DragonFlightGame:
                 self.dialogue_stage = "challenge"
                 self.challenge_button.enabled = True
             return
-        if self.game_over:
-            return
-        self.elapsed += dt
-        self.invulnerable = max(0, self.invulnerable - dt)
-        player = self.player.entity
-        horizontal = held_keys["d"] + held_keys["right"] - held_keys["a"] - held_keys["left"]
-        vertical = held_keys["w"] + held_keys["up"] - held_keys["s"] - held_keys["down"]
-        boost = 1.35 if held_keys["space"] else 1.0
-        player.x += horizontal * 10.5 * dt
-        player.y += vertical * 8.0 * dt
-        player.z += self.speed * boost * dt
-        player.x = max(-FOREST_WIDTH + 1.5, min(FOREST_WIDTH - 1.5, player.x))
-        player.y = max(1.3, min(FLIGHT_CEILING, player.y))
-        player.rotation_z = lerp(player.rotation_z, -horizontal * 22, dt * 5)
-        player.rotation_x = lerp(player.rotation_x, vertical * 12, dt * 4)
-        self.player.animate(self.elapsed)
-
-        if self.invulnerable <= 0 and self._hits_tree():
-            self._lose_life("TREE STRIKE")
-        self._update_chasers(dt)
-        if self.lives <= 0:
-            return
-        if player.z >= GOAL_Z - 2:
-            if abs(player.x) <= 8.0 and abs(player.y - 6.0) <= 5.2:
-                self._enter_white_room()
-            else:
-                self._lose_life("MISSED THE BEACON")
-        self._update_camera()
-        distance_left = max(0, int(GOAL_Z - player.z))
-        self.progress_text.text = f"DISTANCE TO GOAL  {distance_left} m"
-        self.lives_text.text = f"HEARTS: {self.lives}"
-        player.alpha = (.45 if int(self.elapsed * 12) % 2 else 1) if self.invulnerable > 0 else 1
-
-    def _hits_tree(self):
-        player = self.player.entity
-        for x, z, radius, trunk_top, canopy_center_y in self.forest.tree_colliders:
-            close_to_trunk = (abs(player.z - z) < 1.35
-                              and abs(player.x - x) < radius + .55)
-            trunk_hit = close_to_trunk and player.y < trunk_top + .45
-            canopy_hit = (
-                math.hypot(player.x - x, player.z - z) < 2.25
-                and player.y + 1.0 > canopy_center_y - .75
-                and player.y - .45 < canopy_center_y + 1.7
-            )
-            if trunk_hit or canopy_hit:
-                return True
-        for gate_z, opening_low, opening_high in self.forest.altitude_gates:
-            if (abs(player.z - gate_z) < 1.5
-                    and not opening_low <= player.y <= opening_high):
-                return True
-        return False
-
-    def _lose_life(self, reason):
-        self.lives -= 1
-        self.invulnerable = 2.0
-        if self.lives <= 0:
-            self.game_over = True
-            self.status_text.text = f"FLIGHT OVER — {reason}  ·  Press R to try again"
-            return
-        self.status_text.text = f"{reason} — shake them off and keep flying!"
-        self.player.entity.position = Vec3(0, 5, max(0, self.player.entity.z - 9))
-        for index, dragon in enumerate(self.chasers):
-            dragon.entity.position = self.player.entity.position + Vec3(
-                (-1 if index == 0 else 1) * 4, 1 + index, -9 - index * 3)
-
-    def _update_chasers(self, dt):
-        player = self.player.entity
-        for index, dragon in enumerate(self.chasers):
-            phase = self.elapsed * 1.2 + index * math.pi
-            enemy = dragon.entity
-            target = player.position + Vec3(math.sin(phase) * 3.1,
-                                            1.2 + math.sin(phase * 1.6) * 1.1,
-                                            -5.5 - index * 2.0)
-            enemy.position = lerp(enemy.position, target, min(1, dt * 1.25))
-            enemy.x = max(-FOREST_WIDTH + 1, min(FOREST_WIDTH - 1, enemy.x))
-            enemy.y = max(1.5, min(FLIGHT_CEILING, enemy.y))
-            enemy.look_at(player.position)
-            dragon.animate(self.elapsed + index * .5)
-            if self.invulnerable <= 0 and distance(enemy.position, player.position) < 2.1:
-                self._lose_life("CHASER HIT")
-                break
+        self.active_quest.update(dt)
 
     def _update_camera(self):
         player = self.player.entity
@@ -436,6 +399,14 @@ class DragonFlightGame:
         self.room_message.text = "Fly through the ten yellow hoops in ten seconds!"
         self.dialogue_stage = "challenge_revealed"
         self.challenge_button.enabled = False
+        self.ok_challenge_button.enabled = True
+
+    def start_hoop_challenge(self):
+        if not self.won or self.dialogue_stage != "challenge_revealed":
+            return
+        self.won = False
+        self.active_quest = self.hoop_quest
+        self.hoop_quest.start()
 
 
 game = None
