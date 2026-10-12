@@ -52,16 +52,17 @@ class WaterFeature(LandscapeFeatures):
 class SunFeature(LandscapeFeatures):
     """Create the visible horizon sun and its directional shadow light."""
 
-    def __init__(self):
+    def __init__(self, shadow_map_resolution):
         self.light = None
         self.shadow_bounds = None
         self.sun = None
+        self.shadow_map_resolution = shadow_map_resolution
 
     def build(self):
         AmbientLight(color=color.rgba32(170, 190, 210, 255))
         self.light = DirectionalLight(
             color=color.rgb32(255, 239, 207),
-            shadow_map_resolution=(2048, 2048),
+            shadow_map_resolution=self.shadow_map_resolution,
             shadows=False,
         )
         # The rays travel from the distant sun toward the islands.
@@ -91,9 +92,14 @@ class SunFeature(LandscapeFeatures):
 
 
 class IslandFeature(LandscapeFeatures):
-    def __init__(self, position, index):
+    def __init__(self, position, index, shrub_count, nest_twig_layers,
+                 nest_twigs_per_layer, nest_marker_count):
         self.position = position
         self.index = index
+        self.shrub_count = shrub_count
+        self.nest_twig_layers = nest_twig_layers
+        self.nest_twigs_per_layer = nest_twigs_per_layer
+        self.nest_marker_count = nest_marker_count
 
     def build(self):
         root = Entity(position=self.position)
@@ -110,7 +116,7 @@ class IslandFeature(LandscapeFeatures):
                color=NEST_ISLAND_ROCK_TINT, texture=cliff_texture,
                texture_scale=(3, 3), shader=self.surface_shader)
 
-        for _ in range(9):
+        for _ in range(self.shrub_count):
             angle = random.random() * math.tau
             distance_from_center = random.uniform(4.3, radius - 1.0)
             x = math.cos(angle) * distance_from_center
@@ -125,9 +131,9 @@ class IslandFeature(LandscapeFeatures):
                unlit=True)
         twig_colors = [color.rgb32(183, 129, 65), color.rgb32(211, 160, 82),
                        color.rgb32(151, 101, 54)]
-        for layer in range(2):
-            for twig in range(12):
-                angle = math.tau * twig / 12
+        for layer in range(self.nest_twig_layers):
+            for twig in range(self.nest_twigs_per_layer):
+                angle = math.tau * twig / self.nest_twigs_per_layer
                 x, z = math.cos(angle) * 1.0, math.sin(angle) * 1.0
                 Entity(parent=root, model="cube",
                        position=(x, 1.47 + layer * .12, z),
@@ -142,8 +148,8 @@ class IslandFeature(LandscapeFeatures):
             Entity(parent=root, model="sphere", position=(x, 1.79, z),
                    scale=(.31, .43, .27), color=egg_colors[index], unlit=True)
 
-        for marker in range(16):
-            angle = marker * math.tau / 16
+        for marker in range(self.nest_marker_count):
+            angle = marker * math.tau / self.nest_marker_count
             Entity(parent=root, model="sphere",
                    position=(math.cos(angle) * 3.15, 1.40, math.sin(angle) * 3.15),
                    scale=(.15, .12, .15), color=color.rgb32(255, 246, 207),
@@ -154,8 +160,9 @@ class IslandFeature(LandscapeFeatures):
 class EnvelopingIslandFeature(LandscapeFeatures):
     """Build a broad island shelf bordered by high, broken cliff walls."""
 
-    def __init__(self):
+    def __init__(self, mesa_spacing):
         self.colliders = []
+        self.mesa_spacing = mesa_spacing
 
     def build(self):
         ground_texture = self.game_texture("Rocks011_1K-JPG_Color.jpg")
@@ -167,7 +174,7 @@ class EnvelopingIslandFeature(LandscapeFeatures):
         # Staggered cliff mesas create an enclosing canyon while leaving the
         # center of the route open for flight.
         for side in (-1, 1):
-            for index, z in enumerate(range(-3, 225, 19)):
+            for index, z in enumerate(range(-3, 225, self.mesa_spacing)):
                 x = side * random.uniform(23, 26)
                 width = random.uniform(12, 17)
                 depth = random.uniform(15, 21)
@@ -190,10 +197,12 @@ class EnvelopingIslandFeature(LandscapeFeatures):
 class RockArchFeature(LandscapeFeatures):
     """A stone gate with a low opening and a route over its crown."""
 
-    def __init__(self, center_x, z, spring_y=7.6, radius=4.7):
+    def __init__(self, center_x, z, spring_y=7.6, radius=4.7,
+                 block_step_degrees=20):
         self.center = Vec3(center_x, 0, z)
         self.spring_y = spring_y
         self.radius = radius
+        self.block_step_degrees = block_step_degrees
         self.colliders = []
 
     def build(self):
@@ -213,7 +222,7 @@ class RockArchFeature(LandscapeFeatures):
             self.colliders.append((Vec3(self.center.x + side * pier_x, pier_center_y, self.center.z),
                                    Vec3(1.35, pier_height / 2, 1.9)))
 
-        for degrees in range(10, 171, 20):
+        for degrees in range(10, 171, self.block_step_degrees):
             angle = math.radians(degrees)
             x = self.center.x + math.cos(angle) * self.radius
             stone_width, stone_height, stone_depth = 1.75, 1.2, 3.8
@@ -241,12 +250,14 @@ class RockArchFeature(LandscapeFeatures):
 class WindGust(LandscapeFeatures):
     """A visible spherical wind volume that pushes anything flying through it."""
 
-    def __init__(self, center, radius, direction, speed, particle_count=24):
+    def __init__(self, center, radius, direction, speed,
+                 mote_count=48, particle_count=24):
         self.center = Vec3(*center)
         self.radius = radius
         self.direction = Vec3(*direction).normalized()
         self.wind_velocity = self.direction * speed
         self.particle_count = particle_count
+        self.mote_count = mote_count
         self.particles = []
         self.region_motes = []
         self.elapsed = 0
@@ -258,7 +269,7 @@ class WindGust(LandscapeFeatures):
     def build(self):
         # A loose, drifting veil marks the gust's approximate edge without a
         # hard geometric shell. Faster streaks inside it reveal wind direction.
-        for _ in range(48):
+        for _ in range(self.mote_count):
             mote = Entity(model="sphere",
                           scale=random.uniform(.18, .34),
                           color=color.rgb32(160, 218, 222), unlit=True)
@@ -331,7 +342,9 @@ class MainAvatar(ABC):
 
 
 class BirdAvatar(MainAvatar):
-    def __init__(self, position):
+    def __init__(self, position, facial_details=True, animate_wings=True):
+        self.facial_details = facial_details
+        self.animate_wings = animate_wings
         self.entity = self.build(position)
 
     def build(self, position):
@@ -342,11 +355,12 @@ class BirdAvatar(MainAvatar):
                color=color.rgb32(255, 193, 93))
         Entity(parent=bird, model=Cone(), position=(0, .34, 1.68), rotation_x=90,
                scale=(.32, .68, .32), color=color.rgb32(230, 103, 53))
-        for side in (-1, 1):
-            Entity(parent=bird, model="sphere", position=(side * .28, .58, 1.2),
-                   scale=.13, color=color.white)
-            Entity(parent=bird, model="sphere", position=(side * .32, .59, 1.3),
-                   scale=.07, color=color.black)
+        if self.facial_details:
+            for side in (-1, 1):
+                Entity(parent=bird, model="sphere", position=(side * .28, .58, 1.2),
+                       scale=.13, color=color.white)
+                Entity(parent=bird, model="sphere", position=(side * .32, .59, 1.3),
+                       scale=.07, color=color.black)
         self.wings = []
         for side in (-1, 1):
             wing = Entity(parent=bird, model="sphere", position=(side * .95, .02, -.05),
@@ -358,6 +372,8 @@ class BirdAvatar(MainAvatar):
         return bird
 
     def animate(self, elapsed_time):
+        if not self.animate_wings:
+            return
         flap = math.sin(elapsed_time * 15) * 34
         for wing, side in self.wings:
             wing.rotation_z = side * (-12 + flap)
@@ -376,7 +392,9 @@ class GameAvatars(ABC):
 
 
 class PredatorAvatar(GameAvatars):
-    def __init__(self, position):
+    def __init__(self, position, facial_details=True, animate_wings=True):
+        self.facial_details = facial_details
+        self.animate_wings = animate_wings
         self.entity = self.build(position)
 
     def build(self, position):
@@ -385,11 +403,12 @@ class PredatorAvatar(GameAvatars):
                color=color.rgb32(119, 59, 125))
         Entity(parent=body, model=Cone(), position=(0, .22, 1.2), rotation_x=90,
                scale=(.3, .58, .3), color=color.rgb32(255, 151, 55))
-        for side in (-1, 1):
-            Entity(parent=body, model="sphere", position=(side * .28, .61, .99),
-                   scale=.13, color=color.white)
-            Entity(parent=body, model="sphere", position=(side * .31, .62, 1.08),
-                   scale=.065, color=color.rgb32(25, 20, 35))
+        if self.facial_details:
+            for side in (-1, 1):
+                Entity(parent=body, model="sphere", position=(side * .28, .61, .99),
+                       scale=.13, color=color.white)
+                Entity(parent=body, model="sphere", position=(side * .31, .62, 1.08),
+                       scale=.065, color=color.rgb32(25, 20, 35))
         self.wings = []
         for side in (-1, 1):
             wing = Entity(parent=body, model="sphere", position=(side * .78, .02, -.12),
@@ -402,6 +421,8 @@ class PredatorAvatar(GameAvatars):
         return body
 
     def animate(self, phase):
+        if not self.animate_wings:
+            return
         for wing, side in self.wings:
             wing.rotation_z = side * (-18 + math.sin(phase * 5) * 38)
 
@@ -409,7 +430,9 @@ class PredatorAvatar(GameAvatars):
 class FlockingBird(GameAvatars):
     """A small, non-hostile bird steered by its flock's boid rules."""
 
-    def __init__(self, position):
+    def __init__(self, position, facial_details=True, animate_wings=True):
+        self.facial_details = facial_details
+        self.animate_wings = animate_wings
         self.entity = self.build(position)
         self.entity.scale = .68
         self.velocity = 4.0 *Vec3(random.uniform(-1, 1), random.uniform(-.5, .5),
@@ -424,11 +447,12 @@ class FlockingBird(GameAvatars):
                color=color.rgb32(91, 198, 184))
         Entity(parent=body, model=Cone(), position=(0, .25, 1.4), rotation_x=90,
                scale=(.26, .5, .26), color=color.rgb32(244, 181, 75))
-        for side in (-1, 1):
-            Entity(parent=body, model="sphere", position=(side * .25, .56, 1.02),
-                   scale=.11, color=color.white)
-            Entity(parent=body, model="sphere", position=(side * .28, .57, 1.1),
-                   scale=.055, color=color.rgb32(20, 45, 55))
+        if self.facial_details:
+            for side in (-1, 1):
+                Entity(parent=body, model="sphere", position=(side * .25, .56, 1.02),
+                       scale=.11, color=color.white)
+                Entity(parent=body, model="sphere", position=(side * .28, .57, 1.1),
+                       scale=.055, color=color.rgb32(20, 45, 55))
         self.wings = []
         for side in (-1, 1):
             wing = Entity(parent=body, model="sphere", position=(side * .73, .02, -.08),
@@ -439,6 +463,8 @@ class FlockingBird(GameAvatars):
         return body
 
     def animate(self, phase):
+        if not self.animate_wings:
+            return
         for wing, side in self.wings:
             wing.rotation_z = side * (-14 + math.sin(phase + self.phase) * 32)
 
@@ -446,7 +472,8 @@ class FlockingBird(GameAvatars):
 class BirdFlock:
     """A wandering obstacle group with cohesion, alignment, and separation."""
 
-    def __init__(self, center, bird_count=6):
+    def __init__(self, center, bird_count=6, facial_details=True,
+                 animate_wings=True):
         self.anchor = Vec3(*center)
         self.birds = []
         self.wander_target = Vec3(0, 0, 0)
@@ -454,7 +481,9 @@ class BirdFlock:
         for _ in range(bird_count):
             offset = Vec3(random.uniform(-2.4, 2.4), random.uniform(-1.4, 1.4),
                           random.uniform(-2.4, 2.4))
-            self.birds.append(FlockingBird(self.anchor + offset))
+            self.birds.append(FlockingBird(self.anchor + offset,
+                                           facial_details=facial_details,
+                                           animate_wings=animate_wings))
 
     @staticmethod
     def _limit(vector, maximum):
@@ -462,6 +491,9 @@ class BirdFlock:
         return vector.normalized() * maximum if length > maximum else vector
 
     def update(self, dt, elapsed_time, wind_at=None):
+        if not self.birds:
+            return
+
         self.wander_timer -= dt
         if self.wander_timer <= 0:
             self.wander_timer = random.uniform(1.0, 2.2)
@@ -509,51 +541,96 @@ class BirdFlock:
 class BirdFlightGame:
     def __init__(self):
         random.seed(12)
+
+        # Rendering: lower values reduce GPU shadow-map and filter work.
+        SHADOW_MAP_RESOLUTION = (1024,1024) # (2048, 2048)  # Shadow texture width and height.
+        SHADOW_SAMPLE_GRID = 1 # 4  # 1-4; 4 means 16 depth samples per pixel.
+
+        # Scenery: raise spacing or lower counts to reduce static draw calls.
+        MESA_SPACING = 19  # Positive distance between enclosing cliff sections.
+        ISLAND_SHRUB_COUNT = 1 # 9  # Small plants placed on each nest island.
+        NEST_TWIG_LAYERS = 1 # 2  # Visible twig rings in each nest.
+        NEST_TWIGS_PER_LAYER = 6 # 12  # Twigs in each nest ring.
+        NEST_MARKER_COUNT = 8 # 16  # Gold stones around each nest.
+        ARCH_ROUTE_LEGS = (0, 2, 4)  # Route legs that receive a stone arch.
+        ARCH_STONE_STEP_DEGREES = 20  # Positive, larger steps create fewer stones.
+
+        # Moving visuals and birds: tune counts to reduce per-frame work.
+        WIND_MOTES_PER_GUST = 24 # 48  # Pale motes outlining each gust region.
+        WIND_STREAM_PARTICLES_PER_GUST = 24  # Gold streaks showing wind direction.
+        WIND_GUST_RADIUS = 7.5  # Affects each avatar inside a gust sphere.
+        FLOCK_GROUP_COUNT = 5  # Flocks are spread across the route legs.
+        BIRDS_PER_FLOCK = 6  # Birds simulated in each flock.
+        PREDATOR_COUNT = 2  # Number of pursuing birds.
+        SHOW_BIRD_FACIAL_DETAILS = True  # False removes eyes from all bird types.
+        ANIMATE_BIRD_WINGS = True  # False keeps wings static to reduce animation work.
+        WIND_GUSTS = [  # Remove entries to reduce the number of active gust regions.
+            (1, .72, (1.0, .22, .32), 4.6),
+            (3, .72, (-.9, .3, .38), 4.8),
+        ]
+
+        lit_with_shadows_shader.shadow_samples = SHADOW_SAMPLE_GRID
         WaterFeature().build()
-        self.terrain_colliders = EnvelopingIslandFeature().build()
+        self.terrain_colliders = EnvelopingIslandFeature(MESA_SPACING).build()
         for index, position in enumerate(ROUTE):
-            IslandFeature(position, index).build()
+            IslandFeature(position, index, ISLAND_SHRUB_COUNT,
+                          NEST_TWIG_LAYERS, NEST_TWIGS_PER_LAYER,
+                          NEST_MARKER_COUNT).build()
 
         start = Vec3(ROUTE[0][0], ROUTE[0][1] + 2.0, ROUTE[0][2] - 3)
-        self.bird = BirdAvatar(start)
-        self.predators = [
-            PredatorAvatar(start + Vec3(-9, random.uniform(-1.5, 1.5), -8)),
-            PredatorAvatar(start + Vec3(10, random.uniform(-1.5, 1.5), -8)),
-        ]
+        self.bird = BirdAvatar(start, SHOW_BIRD_FACIAL_DETAILS,
+                                ANIMATE_BIRD_WINGS)
+        self.predators = []
+        for index in range(PREDATOR_COUNT):
+            side = -1 if index % 2 == 0 else 1
+            row = index // 2
+            position = start + Vec3(side * (9 + row),
+                                    random.uniform(-1.5, 1.5), -8 - row * 2)
+            self.predators.append(PredatorAvatar(
+                position, SHOW_BIRD_FACIAL_DETAILS, ANIMATE_BIRD_WINGS))
+
         self.flocks = []
-        for index in range(len(ROUTE) - 1):
+        route_leg_count = len(ROUTE) - 1
+        flock_count = min(FLOCK_GROUP_COUNT, route_leg_count)
+        for flock_index in range(flock_count):
+            index = round((flock_index + .5) * route_leg_count / flock_count - .5)
             x1, y1, z1 = ROUTE[index]
             x2, y2, z2 = ROUTE[index + 1]
             fraction = .35
             center = (x1 + (x2 - x1) * fraction,
                       y1 + (y2 - y1) * fraction + 1.5,
                       z1 + (z2 - z1) * fraction)
-            self.flocks.append(BirdFlock(center, bird_count=6))
+            self.flocks.append(BirdFlock(
+                center,
+                bird_count=BIRDS_PER_FLOCK,
+                facial_details=SHOW_BIRD_FACIAL_DETAILS,
+                animate_wings=ANIMATE_BIRD_WINGS,
+            ))
         self.arches = []
-        for index in (0, 2, 4):
+        for index in ARCH_ROUTE_LEGS:
             x1, y1, z1 = ROUTE[index]
             x2, y2, z2 = ROUTE[index + 1]
             fraction = .75
             arch = RockArchFeature(x1 + (x2 - x1) * fraction,
-                                   z1 + (z2 - z1) * fraction)
+                                   z1 + (z2 - z1) * fraction,
+                                   block_step_degrees=ARCH_STONE_STEP_DEGREES)
             self.terrain_colliders.extend(arch.build())
             self.arches.append(arch)
 
-        self.sun = SunFeature()
+        self.sun = SunFeature(SHADOW_MAP_RESOLUTION)
         self.sun.build()
 
         self.wind_gusts = []
-        gust_specs = [
-            (1, .72, (1.0, .22, .32), 4.6),
-            (3, .72, (-.9, .3, .38), 4.8),
-        ]
-        for index, fraction, direction, speed in gust_specs:
+        for index, fraction, direction, speed in WIND_GUSTS:
             x1, y1, z1 = ROUTE[index]
             x2, y2, z2 = ROUTE[index + 1]
             center = (x1 + (x2 - x1) * fraction,
                       y1 + (y2 - y1) * fraction + 1.4,
                       z1 + (z2 - z1) * fraction)
-            gust = WindGust(center, radius=7.5, direction=direction, speed=speed)
+            gust = WindGust(center, radius=WIND_GUST_RADIUS,
+                            direction=direction, speed=speed,
+                            mote_count=WIND_MOTES_PER_GUST,
+                            particle_count=WIND_STREAM_PARTICLES_PER_GUST)
             gust.build()
             self.wind_gusts.append(gust)
         self._create_hud()
@@ -589,7 +666,10 @@ class BirdFlightGame:
         camera.rotation = Vec3(0, 0, 0)
         camera.look_at(bird.position + Vec3(0, 1.5, 12))
         for index, predator in enumerate(self.predators):
-            predator.entity.position = bird.position + Vec3((-5, 5)[index], 0, -6)
+            side = -1 if index % 2 == 0 else 1
+            row = index // 2
+            predator.entity.position = bird.position + Vec3(
+                side * (5 + row), 0, -6 - row * 2)
         self.status_text.text = ""
 
     def lose_life(self, reason="Flight setback"):
@@ -605,7 +685,10 @@ class BirdFlightGame:
         self.bird.entity.position = Vec3(x, y + 2.4, z + 3.5)
         self.status_text.text = f"{reason} — back at your last nest; steer for the next marker!"
         for index, predator in enumerate(self.predators):
-            predator.entity.position = self.bird.entity.position + Vec3((-5, 5)[index], 0, -7 - index)
+            side = -1 if index % 2 == 0 else 1
+            row = index // 2
+            predator.entity.position = self.bird.entity.position + Vec3(
+                side * (5 + row), 0, -7 - row * 2)
 
     def handle_input(self, key):
         bird = self.bird.entity
@@ -663,8 +746,10 @@ class BirdFlightGame:
             if self.lives < 3:
                 self.lives += 1
             for index, predator in enumerate(self.predators):
+                side = -1 if index % 2 == 0 else 1
+                row = index // 2
                 predator.entity.position = bird.position + Vec3(
-                    (-5, 5)[index], random.uniform(-1, 1), -7 - index)
+                    side * (5 + row), random.uniform(-1, 1), -7 - row * 2)
             if self.checkpoint == len(ROUTE) - 1:
                 self.won = True
                 self.status_text.text = "HOME AT LAST!  ·  Press R to fly again"
