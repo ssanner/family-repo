@@ -23,12 +23,13 @@ class Forest:
     def __init__(self, seed=12):
         self.random = random.Random(seed)
         self.tree_colliders = []
+        self.root = Entity(name="forest_world")
         self._build_ground()
         self._build_trees()
         self._build_goal()
 
     def _build_ground(self):
-        Entity(model="plane", position=(0, -.8, GOAL_Z / 2),
+        Entity(parent=self.root, model="plane", position=(0, -.8, GOAL_Z / 2),
                scale=(100, 1, GOAL_Z + 140),
                color=color.rgb32(77, 105, 58),
                texture="white_cube", texture_scale=(48, 150),
@@ -38,7 +39,7 @@ class Forest:
             x = self.random.uniform(-FOREST_WIDTH, FOREST_WIDTH)
             z = self.random.uniform(FOREST_START, FOREST_END)
             height = self.random.uniform(.35, .8)
-            Entity(model="sphere", position=(x, -.28 + height / 2, z),
+            Entity(parent=self.root, model="sphere", position=(x, -.28 + height / 2, z),
                    scale=(.35, height, .45),
                    color=self.random.choice((color.rgb32(58, 113, 66),
                                              color.rgb32(83, 130, 65),
@@ -64,16 +65,18 @@ class Forest:
                 crown_color = self.random.choice((color.rgb32(40, 104, 57),
                                                   color.rgb32(48, 119, 62),
                                                   color.rgb32(63, 130, 68)))
-                trunk = Entity(model=Cylinder(), position=(x, trunk_height / 2 - .8, tree_z),
+                trunk = Entity(parent=self.root, model=Cylinder(),
+                               position=(x, -.8, tree_z),
                                scale=(trunk_width, trunk_height, trunk_width),
                                color=bark, shader=lit_with_shadows_shader)
                 # Roots widen the base and make the trunk silhouette readable.
-                Entity(parent=trunk, model="sphere", y=-.43,
-                       scale=(1.9, .28, 1.9), color=bark)
+                Entity(parent=self.root, model="sphere", position=(x, -.66, tree_z),
+                       scale=(trunk_width * 2.2, .3, trunk_width * 2.2), color=bark)
                 crown_y = trunk_height - .8
                 for dx, dy, dz, size in ((0, 1.0, 0, 4.2), (-1.25, .45, .1, 3.25),
                                          (1.2, .35, -.25, 3.35), (.1, .45, 1.1, 3.1)):
-                    Entity(model="sphere", position=(x + dx, crown_y + dy, tree_z + dz),
+                    Entity(parent=self.root, model="sphere",
+                           position=(x + dx, crown_y + dy, tree_z + dz),
                            scale=(size, size * .8, size), color=crown_color,
                            shader=lit_with_shadows_shader)
                 # Collision is intentionally trunk-focused: fly between trunks
@@ -85,19 +88,40 @@ class Forest:
         goal_z = GOAL_Z
         wood = color.rgb32(112, 77, 46)
         for x in (-8, 8):
-            Entity(model=Cylinder(), position=(x, 5.7, goal_z),
+            Entity(parent=self.root, model=Cylinder(), position=(x, -.8, goal_z),
                    scale=(1.15, 12.2, 1.15), color=wood,
                    shader=lit_with_shadows_shader)
-        Entity(model="cube", position=(0, 11.4, goal_z), scale=(17.5, 1.15, 1.5),
+        Entity(parent=self.root, model="cube", position=(0, 11.4, goal_z),
+               scale=(17.5, 1.15, 1.5),
                color=color.rgb32(192, 144, 69), shader=lit_with_shadows_shader)
-        Entity(model="cube", position=(0, 6.2, goal_z - .2), scale=(.48, 11, .5),
+        Entity(parent=self.root, model="cube", position=(0, 6.2, goal_z - .2),
+               scale=(.48, 11, .5),
                color=color.rgba32(111, 222, 190, 145), unlit=True)
-        Entity(model=Cone(), position=(0, 6.8, goal_z), scale=(1.2, 2.5, 1.2),
+        Entity(parent=self.root, model=Cone(), position=(0, 6.8, goal_z),
+               scale=(1.2, 2.5, 1.2),
                color=color.rgb32(115, 255, 202), unlit=True)
-        Entity(model="sphere", position=(0, 6.2, goal_z), scale=2.8,
+        Entity(parent=self.root, model="sphere", position=(0, 6.2, goal_z), scale=2.8,
                color=color.rgba32(123, 255, 196, 130), unlit=True)
-        Text("GOAL", position=(0, 13.7, goal_z), origin=(0, 0), scale=3,
+        Text("GOAL", parent=self.root, position=(0, 13.7, goal_z), origin=(0, 0), scale=3,
              color=color.rgb32(255, 235, 155), billboard=True)
+
+
+class WhiteRoom:
+    """An empty white room used as the post-goal destination."""
+
+    def __init__(self):
+        self.root = Entity(name="white_room", enabled=False)
+        wall_color = color.white
+        Entity(parent=self.root, model="cube", position=(0, -.35, 0),
+               scale=(24, .7, 24), color=wall_color, unlit=True)
+        Entity(parent=self.root, model="cube", position=(0, 10.5, 0),
+               scale=(24, .7, 24), color=wall_color, unlit=True)
+        for x in (-12, 12):
+            Entity(parent=self.root, model="cube", position=(x, 5, 0),
+                   scale=(.7, 11, 24), color=wall_color, unlit=True)
+        for z in (-12, 12):
+            Entity(parent=self.root, model="cube", position=(0, 5, z),
+                   scale=(24, 11, .7), color=wall_color, unlit=True)
 
 
 class Dragon:
@@ -150,6 +174,7 @@ class DragonFlightGame:
                                shadow_map_resolution=(1024, 1024))
         sun.look_at(Vec3(-.3, -.8, -.4))
         self.forest = Forest()
+        self.room = WhiteRoom()
         self.player = Dragon(PLAYER_START,
                              (color.rgb32(48, 130, 105),
                               color.rgb32(39, 91, 81),
@@ -158,11 +183,18 @@ class DragonFlightGame:
         palettes = [
             (color.rgb32(103, 56, 107), color.rgb32(59, 42, 80), color.rgb32(234, 108, 89)),
             (color.rgb32(135, 67, 54), color.rgb32(87, 49, 46), color.rgb32(247, 165, 69)),
+            (color.rgb32(57, 89, 132), color.rgb32(39, 62, 101), color.rgb32(112, 213, 226)),
         ]
         for index, palette in enumerate(palettes):
             self.chasers.append(Dragon(Vec3((-1 if index == 0 else 1) * 3,
                                              5 + index, -8 - index * 4),
                                        palette, scale=.9))
+        self.room_dragon = Dragon(
+            Vec3(0, 2, 5.5),
+            (color.rgb32(216, 142, 59), color.rgb32(154, 80, 47),
+             color.rgb32(255, 220, 126)))
+        self.room_dragon.entity.rotation_y = 180
+        self.room_dragon.entity.enabled = False
         self.speed = 11.5
         self.elapsed = 0
         self.lives = 3
@@ -173,21 +205,51 @@ class DragonFlightGame:
         self.reset_run()
 
     def _create_hud(self):
-        Text("DRAGON FLIGHT", parent=camera.ui, position=(-.86, .45), scale=1.3,
-             color=HUD_COLOR)
-        Text("WASD / arrows: steer     SPACE: burst of speed     R: restart",
-             parent=camera.ui, position=(-.86, .405), scale=.72, color=HUD_COLOR)
-        Text("WEAVE BETWEEN TRUNKS  ·  STAY BELOW THE CANOPY  ·  REACH THE BEACON",
-             parent=camera.ui, position=(-.86, .375), scale=.64,
-             color=color.rgb32(45, 105, 66))
+        self.hud_items = []
+        self.hud_items.append(Text("DRAGON FLIGHT", parent=camera.ui,
+                                   position=(-.86, .45), scale=1.3, color=HUD_COLOR))
+        self.hud_items.append(Text(
+            "WASD / arrows: steer     SPACE: burst of speed     R: restart",
+            parent=camera.ui, position=(-.86, .405), scale=.72, color=HUD_COLOR))
+        self.hud_items.append(Text(
+            "WEAVE BETWEEN TRUNKS  ·  STAY BELOW THE CANOPY  ·  REACH THE BEACON",
+            parent=camera.ui, position=(-.86, .375), scale=.64,
+            color=color.rgb32(45, 105, 66)))
         self.progress_text = Text("", parent=camera.ui, position=(-.86, .34),
                                   scale=.9, color=HUD_COLOR)
         self.status_text = Text("", parent=camera.ui, origin=(0, 0), position=(0, .31),
                                 scale=1.35, color=HUD_COLOR)
         self.lives_text = Text("", parent=camera.ui, position=(.72, .45),
                                scale=1.05, color=HUD_COLOR)
+        self.hud_items.extend((self.progress_text, self.status_text, self.lives_text))
+        self.room_message = Text("Great job flying!", parent=camera.ui,
+                                 position=(0, .34), origin=(0, 0), scale=1.5,
+                                 color=color.rgb32(34, 75, 54), enabled=False)
+        self.choice_buttons = [
+            Button(text="Thank you!", parent=camera.ui, position=(-.15, -.22),
+                   scale=(.24, .085), color=color.rgb32(219, 239, 221),
+                   text_color=color.rgb32(24, 55, 37),
+                   on_click=self.choose_thank_you),
+            Button(text="OK", parent=camera.ui, position=(.15, -.22),
+                   scale=(.24, .085), color=color.rgb32(219, 239, 221),
+                   text_color=color.rgb32(24, 55, 37),
+                   on_click=self.choose_ok),
+        ]
+        for button in self.choice_buttons:
+            button.enabled = False
 
     def reset_run(self):
+        self.forest.root.enabled = True
+        self.room.root.enabled = False
+        self.room_dragon.entity.enabled = False
+        self.room_message.enabled = False
+        for button in self.choice_buttons:
+            button.enabled = False
+        self.dialogue_stage = None
+        self.dialogue_next_time = None
+        for item in self.hud_items:
+            item.enabled = True
+        window.color = color.rgb32(132, 184, 177)
         self.player.entity.position = Vec3(PLAYER_START)
         self.player.entity.rotation = Vec3(0, 0, 0)
         self.lives = 3
@@ -196,6 +258,7 @@ class DragonFlightGame:
         self.won = False
         self.status_text.text = ""
         for index, dragon in enumerate(self.chasers):
+            dragon.entity.enabled = True
             dragon.entity.position = Vec3((-1 if index == 0 else 1) * 3,
                                           5 + index, -8 - index * 4)
         self._update_camera()
@@ -206,7 +269,16 @@ class DragonFlightGame:
 
     def update(self):
         dt = min(time.dt, .04)
-        if self.game_over or self.won:
+        if self.won:
+            self.elapsed += dt
+            self.player.animate(self.elapsed)
+            self.room_dragon.animate(self.elapsed + 1.0)
+            if (self.dialogue_stage == "reply"
+                    and self.elapsed >= self.dialogue_next_time):
+                self.room_message.text = "I have another challenge for you."
+                self.dialogue_stage = "challenge"
+            return
+        if self.game_over:
             return
         self.elapsed += dt
         self.invulnerable = max(0, self.invulnerable - dt)
@@ -230,8 +302,7 @@ class DragonFlightGame:
             return
         if player.z >= GOAL_Z - 2:
             if abs(player.x) <= 8.0 and abs(player.y - 6.0) <= 5.2:
-                self.won = True
-                self.status_text.text = "FOREST CLEARED!  ·  Press R to fly again"
+                self._enter_white_room()
             else:
                 self._lose_life("MISSED THE BEACON")
         self._update_camera()
@@ -286,6 +357,41 @@ class DragonFlightGame:
                                player.position + Vec3(0, 7.2, -17), dt * 3.2)
         camera.look_at(player.position + Vec3(0, .8, 11))
         camera.fov = 76
+
+    def _enter_white_room(self):
+        self.won = True
+        self.forest.root.enabled = False
+        self.room.root.enabled = True
+        self.room_dragon.entity.enabled = True
+        for dragon in self.chasers:
+            dragon.entity.enabled = False
+        self.player.entity.position = Vec3(0, 2, 0)
+        self.player.entity.rotation = Vec3(0, 0, 0)
+        camera.position = Vec3(0, 6.2, -9.5)
+        camera.look_at(self.player.entity.position + Vec3(0, .4, 1.5))
+        window.color = color.white
+        for item in self.hud_items:
+            item.enabled = False
+        self.room_message.enabled = True
+        self.dialogue_stage = "choice"
+        self.dialogue_next_time = None
+        for button in self.choice_buttons:
+            button.enabled = True
+
+    def choose_thank_you(self):
+        self._choose_dialogue("You: Thank you!")
+
+    def choose_ok(self):
+        self._choose_dialogue("You: OK!")
+
+    def _choose_dialogue(self, reply):
+        if not self.won or self.dialogue_stage != "choice":
+            return
+        self.room_message.text = reply
+        self.dialogue_stage = "reply"
+        self.dialogue_next_time = self.elapsed + 1.2
+        for button in self.choice_buttons:
+            button.enabled = False
 
 
 game = None
