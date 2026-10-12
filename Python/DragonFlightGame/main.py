@@ -5,7 +5,7 @@ import random
 from ursina import *
 from ursina.models.procedural.cone import Cone
 from ursina.shaders import lit_with_shadows_shader
-from quest import FireClanQuest, HoopQuest, TreeCanopyQuest
+from quest import EarthClanQuest, FireClanQuest, HoopQuest, TreeCanopyQuest
 from quest import WaterJourneyQuest
 
 
@@ -295,6 +295,7 @@ class DragonFlightGame:
             hoop.enabled = True
         self._create_hud()
         self.fire_quest = FireClanQuest(self, Dragon)
+        self.earth_quest = EarthClanQuest(self, Dragon)
         self.tree_canopy_quest = TreeCanopyQuest(self, self.forest)
         self.hoop_quest = HoopQuest(self, self.hoop_stage)
         self.active_quest = self.tree_canopy_quest
@@ -405,6 +406,9 @@ class DragonFlightGame:
         if self.active_quest is self.fire_quest:
             self.fire_quest.update(dt)
             return
+        if self.active_quest is self.earth_quest:
+            self.earth_quest.update(dt)
+            return
         if self.active_quest is self.water_quest:
             self.water_quest.update(dt)
             return
@@ -510,6 +514,11 @@ class DragonFlightGame:
             for button in self.clan_choice_buttons:
                 button.enabled = False
             self.fire_quest.start()
+            return
+        if clan == "Earth Clan":
+            for button in self.clan_choice_buttons:
+                button.enabled = False
+            self.earth_quest.start()
             return
         self.room_message.text = f"You have chosen the {clan}!"
         self.dialogue_stage = "clan_selected"
