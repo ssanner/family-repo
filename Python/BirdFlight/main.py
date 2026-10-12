@@ -7,6 +7,7 @@ from pathlib import Path
 from ursina import *
 from ursina.models.procedural.cone import Cone
 from ursina.models.procedural.cylinder import Cylinder
+from ursina.shaders import lit_with_shadows_shader
 
 
 ROUTE = [(-5, 7, 0), (4, 10, 38), (10, 5, 79), (0, 12, 122),
@@ -24,6 +25,7 @@ class LandscapeFeatures(ABC):
 
     texture_folder = Path(__file__).resolve().parent / "assets" / "textures"
     _texture_cache = {}
+    surface_shader = lit_with_shadows_shader
 
     @classmethod
     def game_texture(cls, filename):
@@ -47,6 +49,47 @@ class WaterFeature(LandscapeFeatures):
                       color=color.rgb32(47, 151, 174))
 
 
+class SunFeature(LandscapeFeatures):
+    """Create the visible horizon sun and its directional shadow light."""
+
+    def __init__(self):
+        self.light = None
+        self.shadow_bounds = None
+        self.sun = None
+
+    def build(self):
+        AmbientLight(color=color.rgba32(170, 190, 210, 255))
+        self.light = DirectionalLight(
+            color=color.rgb32(255, 239, 207),
+            shadow_map_resolution=(2048, 2048),
+            shadows=False,
+        )
+        # The rays travel from the distant sun toward the islands.
+        self.light.look_at(Vec3(.13, -.11, -1))
+
+        # Keep the shadow map focused on the playable canyon instead of the
+        # oversized ocean plane, which would make island shadows too soft.
+        self.shadow_bounds = Entity(
+            model="wireframe_cube",
+            position=(0, 4, 104),
+            scale=(120, 70, 310),
+            visible=False,
+            collider=None,
+        )
+        self.light.update_bounds(self.shadow_bounds)
+        self.light.shadows = True
+
+        self.sun = Entity(
+            model="sphere",
+            name="horizon_sun",
+            position=(-72, 58, 640),
+            scale=34,
+            color=color.rgb32(255, 202, 112),
+            unlit=True,
+        )
+        return self.sun
+
+
 class IslandFeature(LandscapeFeatures):
     def __init__(self, position, index):
         self.position = position
@@ -61,10 +104,11 @@ class IslandFeature(LandscapeFeatures):
             Entity(parent=root, model=Cylinder(), position=(0, -1.2 - layer * 1.35, 0),
                    scale=(width * 2, 2.5, width * 2),
                    color=NEST_ISLAND_ROCK_TINT.tint(-layer * .025),
-                   texture=cliff_texture, texture_scale=(2, 2))
+                   texture=cliff_texture, texture_scale=(2, 2),
+                   shader=self.surface_shader)
         Entity(parent=root, model=Cylinder(), y=.05, scale=(radius * 2, .65, radius * 2),
                color=NEST_ISLAND_ROCK_TINT, texture=cliff_texture,
-               texture_scale=(3, 3))
+               texture_scale=(3, 3), shader=self.surface_shader)
 
         for _ in range(9):
             angle = random.random() * math.tau
@@ -118,7 +162,7 @@ class EnvelopingIslandFeature(LandscapeFeatures):
         cliff_texture = ground_texture
         Entity(model=Cylinder(), position=(0, -13.5, 104), scale=(82, 7, 252),
                color=ROCK_TEXTURE_TINT, texture=ground_texture,
-               texture_scale=(24, 68))
+               texture_scale=(24, 68), shader=self.surface_shader)
 
         # Staggered cliff mesas create an enclosing canyon while leaving the
         # center of the route open for flight.
@@ -132,11 +176,12 @@ class EnvelopingIslandFeature(LandscapeFeatures):
                 cliff_color = ROCK_TEXTURE_TINT.tint(random.uniform(-.035, .02))
                 Entity(model=Cylinder(), position=(x, -6.5, z),
                        scale=(width, height, depth), color=cliff_color,
-                       texture=cliff_texture, texture_scale=(2, 3))
+                       texture=cliff_texture, texture_scale=(2, 3),
+                       shader=self.surface_shader)
                 Entity(model=Cylinder(), position=(x - side * .4, -6.5 + height * .62, z + 1),
                        scale=(width * .78, height * .38, depth * .82),
                        color=cliff_color.tint(.035), texture=cliff_texture,
-                       texture_scale=(2, 2))
+                       texture_scale=(2, 2), shader=self.surface_shader)
                 self.colliders.append((Vec3(x, center_y, z),
                                        Vec3(width * .42, height * .5, depth * .42)))
         return self.colliders
@@ -163,7 +208,8 @@ class RockArchFeature(LandscapeFeatures):
             Entity(model=Cylinder(),
                    position=(self.center.x + side * pier_x, pier_bottom, self.center.z),
                    scale=(2.8, pier_height, 3.8), color=random.choice(stone_tints),
-                   texture=arch_texture, texture_scale=(2, 4))
+                   texture=arch_texture, texture_scale=(2, 4),
+                   shader=self.surface_shader)
             self.colliders.append((Vec3(self.center.x + side * pier_x, pier_center_y, self.center.z),
                                    Vec3(1.35, pier_height / 2, 1.9)))
 
@@ -183,7 +229,8 @@ class RockArchFeature(LandscapeFeatures):
             Entity(model="cube", position=(x, y, self.center.z),
                    scale=(stone_width, stone_height, stone_depth),
                    rotation_z=tangent_angle, color=random.choice(stone_tints),
-                   texture=arch_texture, texture_scale=(1.5, 2))
+                   texture=arch_texture, texture_scale=(1.5, 2),
+                   shader=self.surface_shader)
 
             # Use the rotated block's approximate axis-aligned bounds for hits.
             self.colliders.append((Vec3(x, y, self.center.z),
@@ -467,10 +514,6 @@ class BirdFlightGame:
         for index, position in enumerate(ROUTE):
             IslandFeature(position, index).build()
 
-        AmbientLight(color=color.rgba32(170, 190, 210, 255))
-        sun = DirectionalLight(color=color.rgb32(255, 239, 207))
-        sun.look_at(Vec3(1, -2, -1))
-
         start = Vec3(ROUTE[0][0], ROUTE[0][1] + 2.0, ROUTE[0][2] - 3)
         self.bird = BirdAvatar(start)
         self.predators = [
@@ -495,6 +538,10 @@ class BirdFlightGame:
                                    z1 + (z2 - z1) * fraction)
             self.terrain_colliders.extend(arch.build())
             self.arches.append(arch)
+
+        self.sun = SunFeature()
+        self.sun.build()
+
         self.wind_gusts = []
         gust_specs = [
             (1, .72, (1.0, .22, .32), 4.6),
