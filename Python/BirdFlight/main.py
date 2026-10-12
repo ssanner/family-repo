@@ -139,6 +139,60 @@ class RockArchFeature(LandscapeFeatures):
         return self.colliders
 
 
+class WindGust(LandscapeFeatures):
+    """A visible spherical wind volume that pushes anything flying through it."""
+
+    def __init__(self, center, radius, direction, speed, particle_count=24):
+        self.center = Vec3(*center)
+        self.radius = radius
+        self.direction = Vec3(*direction).normalized()
+        self.wind_velocity = self.direction * speed
+        self.particle_count = particle_count
+        self.particles = []
+        self.stream_speed = max(7.0, speed * 2.2)
+        reference = Vec3(0, 1, 0) if abs(self.direction.y) < .9 else Vec3(1, 0, 0)
+        self.side = self.direction.cross(reference).normalized()
+        self.up = self.direction.cross(self.side).normalized()
+
+    def build(self):
+        boundary = Entity(model="sphere", position=self.center,
+                           scale=self.radius * 2, color=color.rgb32(89, 205, 221),
+                           wireframe=True, unlit=True)
+        boundary.alpha = .72
+        streak_color = color.rgb32(255, 235, 157)
+        for _ in range(self.particle_count):
+            particle = Entity(model="sphere", scale=(.09, .09, .62),
+                              color=streak_color, unlit=True)
+            particle.position = self._spawn_position()
+            particle.look_at(particle.position + self.direction)
+            self.particles.append(particle)
+        return boundary
+
+    def _spawn_position(self):
+        along = random.uniform(-self.radius * .82, -self.radius * .25)
+        radial_limit = math.sqrt(max(0, self.radius ** 2 - along ** 2)) * .72
+        radial = math.sqrt(random.random()) * radial_limit
+        angle = random.random() * math.tau
+        offset = (self.direction * along
+                  + self.side * (math.cos(angle) * radial)
+                  + self.up * (math.sin(angle) * radial))
+        return self.center + offset
+
+    def velocity_at(self, position):
+        distance_from_center = distance(position, self.center)
+        if distance_from_center >= self.radius:
+            return Vec3(0, 0, 0)
+        falloff = 1 - distance_from_center / self.radius
+        return self.wind_velocity * falloff
+
+    def update(self, dt):
+        for particle in self.particles:
+            particle.position += self.direction * self.stream_speed * dt
+            if distance(particle.position, self.center) >= self.radius - .3:
+                particle.position = self._spawn_position()
+            particle.look_at(particle.position + self.direction)
+
+
 class MainAvatar(ABC):
     """Contract for the avatar controlled by the player."""
 
@@ -282,7 +336,7 @@ class BirdFlock:
         length = vector.length()
         return vector.normalized() * maximum if length > maximum else vector
 
-    def update(self, dt, elapsed_time):
+    def update(self, dt, elapsed_time, wind_at=None):
         self.wander_timer -= dt
         if self.wander_timer <= 0:
             self.wander_timer = random.uniform(1.0, 2.2)
@@ -314,7 +368,8 @@ class BirdFlock:
             wander = (desired - bird.entity.position) * .16
             velocity = bird.velocity + (cohesion + alignment + separation + wander) * dt
             bird.velocity = self._limit(velocity, 2.8)
-            bird.entity.position += bird.velocity * dt
+            wind_velocity = wind_at(bird.entity.position) if wind_at else Vec3(0, 0, 0)
+            bird.entity.position += (bird.velocity + wind_velocity) * dt
             bird.entity.x = max(self.anchor.x - 8, min(self.anchor.x + 8, bird.entity.x))
             bird.entity.y = max(1, min(20, bird.entity.y))
             bird.entity.z = max(self.anchor.z - 5, min(self.anchor.z + 5, bird.entity.z))
@@ -362,6 +417,20 @@ class BirdFlightGame:
                                    z1 + (z2 - z1) * fraction)
             self.terrain_colliders.extend(arch.build())
             self.arches.append(arch)
+        self.wind_gusts = []
+        gust_specs = [
+            (1, .72, (1.0, .22, .32), 4.6),
+            (3, .72, (-.9, .3, .38), 4.8),
+        ]
+        for index, fraction, direction, speed in gust_specs:
+            x1, y1, z1 = ROUTE[index]
+            x2, y2, z2 = ROUTE[index + 1]
+            center = (x1 + (x2 - x1) * fraction,
+                      y1 + (y2 - y1) * fraction + 1.4,
+                      z1 + (z2 - z1) * fraction)
+            gust = WindGust(center, radius=7.5, direction=direction, speed=speed)
+            gust.build()
+            self.wind_gusts.append(gust)
         self._create_hud()
         self.speed_z = 8.6
         self.reset_run()
@@ -371,7 +440,7 @@ class BirdFlightGame:
              color=HUD_COLOR)
         Text("WASD / arrows: steer     SPACE: flap boost     R: restart",
              parent=camera.ui, position=(-.86, .405), scale=.75, color=HUD_COLOR)
-        Text("DODGE TEAL FLOCKS  |  ARCHES: FLY LOW OR HIGH",
+        Text("TEAL: DODGE  |  ARCHES: LOW/HIGH  |  CYAN SPHERES: WIND",
              parent=camera.ui, position=(-.86, .375), scale=.65,
              color=color.rgb32(19, 112, 125))
         self.progress_text = Text("", parent=camera.ui, position=(-.86, .34),
@@ -431,14 +500,17 @@ class BirdFlightGame:
         if self.game_over or self.won:
             return
 
+        for gust in self.wind_gusts:
+            gust.update(dt)
         self.invulnerable = max(0, self.invulnerable - dt)
         bird = self.bird.entity
         horizontal = held_keys["d"] + held_keys["right"] - held_keys["a"] - held_keys["left"]
         vertical = held_keys["w"] + held_keys["up"] - held_keys["s"] - held_keys["down"]
         boost = 1.55 if held_keys["space"] else 1.0
-        bird.x += horizontal * 10.0 * dt
-        bird.y += vertical * 8.2 * dt
-        bird.z += self.speed_z * boost * dt
+        wind_velocity = self._wind_velocity_at(bird.position)
+        bird.x += (horizontal * 10.0 + wind_velocity.x) * dt
+        bird.y += (vertical * 8.2 + wind_velocity.y) * dt
+        bird.z += (self.speed_z * boost + wind_velocity.z) * dt
         bird.y = max(-1.0, min(25.0, bird.y))
         bird.x = max(-25.0, min(25.0, bird.x))
         bird.rotation_z = lerp(bird.rotation_z, -horizontal * 20, dt * 5)
@@ -489,6 +561,7 @@ class BirdFlightGame:
             )
             enemy = predator.entity
             enemy.position = lerp(enemy.position, target, min(1, dt * 1.5))
+            enemy.position += self._wind_velocity_at(enemy.position) * dt
             enemy.look_at(bird.position)
             enemy.rotation_x = math.sin(phase * 2) * 12
             predator.animate(phase)
@@ -499,7 +572,7 @@ class BirdFlightGame:
     def _update_flocks(self, dt):
         bird_position = self.bird.entity.position
         for flock in self.flocks:
-            flock.update(dt, time.time())
+            flock.update(dt, time.time(), self._wind_velocity_at)
             if self.invulnerable <= 0 and flock.collides_with(bird_position):
                 self.lose_life("Flock collision")
                 return
@@ -513,6 +586,12 @@ class BirdFlightGame:
                     and abs(position.z - center.z) < half_extents.z + bird_radius.z):
                 self.lose_life("Rock collision")
                 return
+
+    def _wind_velocity_at(self, position):
+        wind = Vec3(0, 0, 0)
+        for gust in self.wind_gusts:
+            wind += gust.velocity_at(position)
+        return wind
 
     def _update_camera_and_hud(self):
         bird = self.bird.entity
