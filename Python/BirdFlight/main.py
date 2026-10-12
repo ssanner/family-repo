@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 import math
 import random
+from pathlib import Path
 
 from ursina import *
 from ursina.models.procedural.cone import Cone
@@ -12,6 +13,23 @@ ROUTE = [(-5, 7, 0), (4, 10, 38), (10, 5, 79), (0, 12, 122),
          (-10, 7, 165), (3, 11, 208)]
 NEST_RADIUS = 5.0
 HUD_COLOR = color.rgb32(20, 44, 64)
+# The supplied base-color map is mid-gray. A darker vertex tint keeps the
+# scene's bright ambient and sun lighting from washing its detail out.
+ROCK_TEXTURE_TINT = color.rgb32(170, 160, 145)
+NEST_ISLAND_ROCK_TINT = color.rgb32(190, 180, 163)
+TEXTURE_FOLDER = Path(__file__).resolve().parent / "assets" / "textures"
+TEXTURE_CACHE = {}
+
+
+def game_texture(filename):
+    """Load an optional texture from this project's local texture directory."""
+    if filename not in TEXTURE_CACHE:
+        path = TEXTURE_FOLDER / filename
+        TEXTURE_CACHE[filename] = (
+            load_texture(path.name, folder=TEXTURE_FOLDER)
+            if path.is_file() else None
+        )
+    return TEXTURE_CACHE[filename]
 
 
 class LandscapeFeatures(ABC):
@@ -36,13 +54,16 @@ class IslandFeature(LandscapeFeatures):
     def build(self):
         root = Entity(position=self.position)
         radius = 7.8 if self.index == 0 else 6.5
-        rock = color.rgb32(114, 105, 96)
+        cliff_texture = game_texture("Rocks011_1K-JPG_Color.jpg")
         for layer in range(4):
             width = radius * (1.0 - layer * .075)
             Entity(parent=root, model=Cylinder(), position=(0, -1.2 - layer * 1.35, 0),
-                   scale=(width * 2, 2.5, width * 2), color=rock.tint(-layer * .035))
+                   scale=(width * 2, 2.5, width * 2),
+                   color=NEST_ISLAND_ROCK_TINT.tint(-layer * .025),
+                   texture=cliff_texture, texture_scale=(2, 2))
         Entity(parent=root, model=Cylinder(), y=.05, scale=(radius * 2, .65, radius * 2),
-               color=color.rgb32(112, 159, 92))
+               color=NEST_ISLAND_ROCK_TINT, texture=cliff_texture,
+               texture_scale=(3, 3))
 
         for _ in range(9):
             angle = random.random() * math.tau
@@ -52,13 +73,36 @@ class IslandFeature(LandscapeFeatures):
             Entity(parent=root, model="sphere", position=(x, .42, z), scale=(.36, .65, .36),
                    color=random.choice([color.rgb32(66, 118, 76), color.rgb32(83, 135, 80)]))
 
-        Entity(parent=root, model="sphere", position=(0, .52, 0), scale=(1.9, .23, 1.9),
-               color=color.rgb32(241, 205, 116))
+        # Give checkpoints a recognizable nest silhouette instead of a flat
+        # colored pad that can blend into the textured rock from a distance.
+        Entity(parent=root, model="sphere", position=(0, 1.42, 0),
+               scale=(2.2, .18, 2.2), color=color.rgb32(104, 69, 43),
+               unlit=True)
+        twig_colors = [color.rgb32(183, 129, 65), color.rgb32(211, 160, 82),
+                       color.rgb32(151, 101, 54)]
+        for layer in range(2):
+            for twig in range(12):
+                angle = math.tau * twig / 12
+                x, z = math.cos(angle) * 1.0, math.sin(angle) * 1.0
+                Entity(parent=root, model="cube",
+                       position=(x, 1.47 + layer * .12, z),
+                       scale=(.92, .12, .15),
+                       rotation_y=math.degrees(angle) + 90,
+                       color=twig_colors[(twig + layer) % len(twig_colors)],
+                       unlit=True)
+
+        egg_colors = [color.rgb32(255, 241, 205), color.rgb32(232, 246, 229),
+                      color.rgb32(249, 226, 203)]
+        for index, (x, z) in enumerate(((-.43, -.12), (.12, -.34), (.38, .2))):
+            Entity(parent=root, model="sphere", position=(x, 1.79, z),
+                   scale=(.31, .43, .27), color=egg_colors[index], unlit=True)
+
         for marker in range(16):
             angle = marker * math.tau / 16
             Entity(parent=root, model="sphere",
-                   position=(math.cos(angle) * 3.15, .38, math.sin(angle) * 3.15),
-                   scale=(.15, .12, .15), color=color.rgb32(255, 227, 145))
+                   position=(math.cos(angle) * 3.15, 1.40, math.sin(angle) * 3.15),
+                   scale=(.15, .12, .15), color=color.rgb32(255, 246, 207),
+                   unlit=True)
         return root
 
 
@@ -69,9 +113,11 @@ class EnvelopingIslandFeature(LandscapeFeatures):
         self.colliders = []
 
     def build(self):
-        rock = color.rgb32(91, 86, 83)
+        ground_texture = game_texture("Rocks011_1K-JPG_Color.jpg")
+        cliff_texture = ground_texture
         Entity(model=Cylinder(), position=(0, -13.5, 104), scale=(82, 7, 252),
-               color=color.rgb32(103, 99, 89))
+               color=ROCK_TEXTURE_TINT, texture=ground_texture,
+               texture_scale=(24, 68))
 
         # Staggered cliff mesas create an enclosing canyon while leaving the
         # center of the route open for flight.
@@ -82,12 +128,14 @@ class EnvelopingIslandFeature(LandscapeFeatures):
                 depth = random.uniform(15, 21)
                 height = random.uniform(12, 19)
                 center_y = -6.5 + height / 2
-                cliff_color = rock.tint(random.uniform(-.08, .06))
+                cliff_color = ROCK_TEXTURE_TINT.tint(random.uniform(-.035, .02))
                 Entity(model=Cylinder(), position=(x, -6.5, z),
-                       scale=(width, height, depth), color=cliff_color)
+                       scale=(width, height, depth), color=cliff_color,
+                       texture=cliff_texture, texture_scale=(2, 3))
                 Entity(model=Cylinder(), position=(x - side * .4, -6.5 + height * .62, z + 1),
                        scale=(width * .78, height * .38, depth * .82),
-                       color=cliff_color.tint(.035))
+                       color=cliff_color.tint(.035), texture=cliff_texture,
+                       texture_scale=(2, 2))
                 self.colliders.append((Vec3(x, center_y, z),
                                        Vec3(width * .42, height * .5, depth * .42)))
         return self.colliders
@@ -103,16 +151,18 @@ class RockArchFeature(LandscapeFeatures):
         self.colliders = []
 
     def build(self):
-        stone_colors = [color.rgb32(122, 111, 100), color.rgb32(139, 126, 111),
-                        color.rgb32(105, 101, 96)]
+        stone_tints = [color.rgb32(153, 145, 132), color.rgb32(166, 157, 143),
+                       color.rgb32(145, 139, 132)]
         pier_x = self.radius + .9
         pier_bottom = -6.5
         pier_height = self.spring_y - pier_bottom
         pier_center_y = pier_bottom + pier_height / 2
+        arch_texture = game_texture("Rocks011_1K-JPG_Color.jpg")
         for side in (-1, 1):
             Entity(model=Cylinder(),
                    position=(self.center.x + side * pier_x, pier_bottom, self.center.z),
-                   scale=(2.8, pier_height, 3.8), color=random.choice(stone_colors))
+                   scale=(2.8, pier_height, 3.8), color=random.choice(stone_tints),
+                   texture=arch_texture, texture_scale=(2, 4))
             self.colliders.append((Vec3(self.center.x + side * pier_x, pier_center_y, self.center.z),
                                    Vec3(1.35, pier_height / 2, 1.9)))
 
@@ -131,7 +181,8 @@ class RockArchFeature(LandscapeFeatures):
             y = max(arc_y, self.spring_y + half_y)
             Entity(model="cube", position=(x, y, self.center.z),
                    scale=(stone_width, stone_height, stone_depth),
-                   rotation_z=tangent_angle, color=random.choice(stone_colors))
+                   rotation_z=tangent_angle, color=random.choice(stone_tints),
+                   texture=arch_texture, texture_scale=(1.5, 2))
 
             # Use the rotated block's approximate axis-aligned bounds for hits.
             self.colliders.append((Vec3(x, y, self.center.z),
