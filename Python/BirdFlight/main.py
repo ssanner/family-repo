@@ -149,24 +149,41 @@ class WindGust(LandscapeFeatures):
         self.wind_velocity = self.direction * speed
         self.particle_count = particle_count
         self.particles = []
+        self.region_motes = []
+        self.elapsed = 0
         self.stream_speed = max(7.0, speed * 2.2)
         reference = Vec3(0, 1, 0) if abs(self.direction.y) < .9 else Vec3(1, 0, 0)
         self.side = self.direction.cross(reference).normalized()
         self.up = self.direction.cross(self.side).normalized()
 
     def build(self):
-        boundary = Entity(model="sphere", position=self.center,
-                           scale=self.radius * 2, color=color.rgb32(89, 205, 221),
-                           wireframe=True, unlit=True)
-        boundary.alpha = .72
+        # A loose, drifting veil marks the gust's approximate edge without a
+        # hard geometric shell. Faster streaks inside it reveal wind direction.
+        for _ in range(48):
+            mote = Entity(model="sphere",
+                          scale=random.uniform(.18, .34),
+                          color=color.rgb32(160, 218, 222), unlit=True)
+            mote.alpha = random.uniform(.16, .3)
+            mote.position = self._spawn_mote_position()
+            self.region_motes.append((mote, random.uniform(0, math.tau)))
+
         streak_color = color.rgb32(255, 235, 157)
         for _ in range(self.particle_count):
-            particle = Entity(model="sphere", scale=(.09, .09, .62),
+            particle = Entity(model="sphere", scale=(.075, .075, .62),
                               color=streak_color, unlit=True)
             particle.position = self._spawn_position()
             particle.look_at(particle.position + self.direction)
             self.particles.append(particle)
-        return boundary
+        return self.particles
+
+    def _spawn_mote_position(self):
+        direction = Vec3(random.uniform(-1, 1), random.uniform(-1, 1),
+                         random.uniform(-1, 1))
+        while direction.length() < .01:
+            direction = Vec3(random.uniform(-1, 1), random.uniform(-1, 1),
+                             random.uniform(-1, 1))
+        return self.center + direction.normalized() * random.uniform(
+            self.radius * .78, self.radius * .99)
 
     def _spawn_position(self):
         along = random.uniform(-self.radius * .82, -self.radius * .25)
@@ -186,6 +203,15 @@ class WindGust(LandscapeFeatures):
         return self.wind_velocity * falloff
 
     def update(self, dt):
+        self.elapsed += dt
+        for mote, phase in self.region_motes:
+            drift = (self.direction * .55
+                     + self.side * (math.sin(self.elapsed * .8 + phase) * .18)
+                     + self.up * (math.cos(self.elapsed * .65 + phase) * .18))
+            mote.position += drift * dt
+            if distance(mote.position, self.center) >= self.radius:
+                mote.position = self._spawn_mote_position()
+
         for particle in self.particles:
             particle.position += self.direction * self.stream_speed * dt
             if distance(particle.position, self.center) >= self.radius - .3:
@@ -440,7 +466,7 @@ class BirdFlightGame:
              color=HUD_COLOR)
         Text("WASD / arrows: steer     SPACE: flap boost     R: restart",
              parent=camera.ui, position=(-.86, .405), scale=.75, color=HUD_COLOR)
-        Text("TEAL: DODGE  |  ARCHES: LOW/HIGH  |  CYAN SPHERES: WIND",
+        Text("TEAL: DODGE  |  ARCHES: LOW/HIGH  |  WIND CLOUD: AREA / GOLD: FLOW",
              parent=camera.ui, position=(-.86, .375), scale=.65,
              color=color.rgb32(19, 112, 125))
         self.progress_text = Text("", parent=camera.ui, position=(-.86, .34),
