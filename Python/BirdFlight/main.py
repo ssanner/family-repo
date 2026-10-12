@@ -70,7 +70,7 @@ class EnvelopingIslandFeature(LandscapeFeatures):
 
     def build(self):
         rock = color.rgb32(91, 86, 83)
-        Entity(model=Cylinder(), position=(0, -10, 104), scale=(82, 7, 252),
+        Entity(model=Cylinder(), position=(0, -13.5, 104), scale=(82, 7, 252),
                color=color.rgb32(103, 99, 89))
 
         # Staggered cliff mesas create an enclosing canyon while leaving the
@@ -83,9 +83,9 @@ class EnvelopingIslandFeature(LandscapeFeatures):
                 height = random.uniform(12, 19)
                 center_y = -6.5 + height / 2
                 cliff_color = rock.tint(random.uniform(-.08, .06))
-                Entity(model=Cylinder(), position=(x, center_y, z),
+                Entity(model=Cylinder(), position=(x, -6.5, z),
                        scale=(width, height, depth), color=cliff_color)
-                Entity(model=Cylinder(), position=(x - side * .4, center_y + height * .31, z + 1),
+                Entity(model=Cylinder(), position=(x - side * .4, -6.5 + height * .62, z + 1),
                        scale=(width * .78, height * .38, depth * .82),
                        color=cliff_color.tint(.035))
                 self.colliders.append((Vec3(x, center_y, z),
@@ -106,33 +106,36 @@ class RockArchFeature(LandscapeFeatures):
         stone_colors = [color.rgb32(122, 111, 100), color.rgb32(139, 126, 111),
                         color.rgb32(105, 101, 96)]
         pier_x = self.radius + .9
-        pier_height = self.spring_y + 6.5
-        pier_y = (self.spring_y - 6.5) / 2
+        pier_bottom = -6.5
+        pier_height = self.spring_y - pier_bottom
+        pier_center_y = pier_bottom + pier_height / 2
         for side in (-1, 1):
             Entity(model=Cylinder(),
-                   position=(self.center.x + side * pier_x, pier_y, self.center.z),
+                   position=(self.center.x + side * pier_x, pier_bottom, self.center.z),
                    scale=(2.8, pier_height, 3.8), color=random.choice(stone_colors))
-            self.colliders.append((Vec3(self.center.x + side * pier_x, pier_y, self.center.z),
+            self.colliders.append((Vec3(self.center.x + side * pier_x, pier_center_y, self.center.z),
                                    Vec3(1.35, pier_height / 2, 1.9)))
 
         for degrees in range(10, 171, 20):
             angle = math.radians(degrees)
             x = self.center.x + math.cos(angle) * self.radius
-            y = self.spring_y + math.sin(angle) * self.radius
             stone_width, stone_height, stone_depth = 1.75, 1.2, 3.8
             tangent_angle = degrees + 90
+            radians = math.radians(tangent_angle)
+            half_x = (abs(math.cos(radians)) * stone_width
+                      + abs(math.sin(radians)) * stone_height) / 2
+            half_y = (abs(math.sin(radians)) * stone_width
+                      + abs(math.cos(radians)) * stone_height) / 2
+            arc_y = self.spring_y + math.sin(angle) * self.radius
+            # Keep the underside of the two end stones flush with the support tops.
+            y = max(arc_y, self.spring_y + half_y)
             Entity(model="cube", position=(x, y, self.center.z),
                    scale=(stone_width, stone_height, stone_depth),
                    rotation_z=tangent_angle, color=random.choice(stone_colors))
 
             # Use the rotated block's approximate axis-aligned bounds for hits.
-            radians = math.radians(tangent_angle)
-            half_x = (abs(math.cos(radians)) * stone_width
-                      + abs(math.sin(radians)) * stone_height) / 2 + .08
-            half_y = (abs(math.sin(radians)) * stone_width
-                      + abs(math.cos(radians)) * stone_height) / 2 + .08
             self.colliders.append((Vec3(x, y, self.center.z),
-                                   Vec3(half_x, half_y, stone_depth / 2)))
+                                   Vec3(half_x + .08, half_y + .08, stone_depth / 2)))
         return self.colliders
 
 
@@ -395,18 +398,18 @@ class BirdFlightGame:
             predator.entity.position = bird.position + Vec3((-5, 5)[index], 0, -6)
         self.status_text.text = ""
 
-    def lose_life(self):
+    def lose_life(self, reason="Flight setback"):
         self.lives -= 1
         self.invulnerable = 2.2
         if self.lives <= 0:
             self.game_over = True
-            self.status_text.text = "THE WIND CAUGHT YOU  ·  Press R to try again"
+            self.status_text.text = f"FLIGHT OVER — {reason.upper()}  ·  Press R to try again"
             self.status_text.color = HUD_COLOR
             return
 
         x, y, z = ROUTE[self.checkpoint]
         self.bird.entity.position = Vec3(x, y + 2.4, z + 3.5)
-        self.status_text.text = "Back to your last nest — steer for the next marker!"
+        self.status_text.text = f"{reason} — back at your last nest; steer for the next marker!"
         for index, predator in enumerate(self.predators):
             predator.entity.position = self.bird.entity.position + Vec3((-5, 5)[index], 0, -7 - index)
 
@@ -471,7 +474,7 @@ class BirdFlightGame:
             return True
 
         if bird.z > nz + 5:
-            self.lose_life()
+            self.lose_life("Missed the nest")
             return False
         return True
 
@@ -490,7 +493,7 @@ class BirdFlightGame:
             enemy.rotation_x = math.sin(phase * 2) * 12
             predator.animate(phase)
             if self.invulnerable <= 0 and distance(enemy.position, bird.position) < 2.35:
-                self.lose_life()
+                self.lose_life("Predator strike")
                 break
 
     def _update_flocks(self, dt):
@@ -498,10 +501,7 @@ class BirdFlightGame:
         for flock in self.flocks:
             flock.update(dt, time.time())
             if self.invulnerable <= 0 and flock.collides_with(bird_position):
-                self.lose_life()
-                if not self.game_over:
-                    self.status_text.text = "Flock collision — back at your last nest"
-                    self.status_text.color = HUD_COLOR
+                self.lose_life("Flock collision")
                 return
 
     def _update_terrain_collisions(self):
@@ -511,10 +511,7 @@ class BirdFlightGame:
             if (abs(position.x - center.x) < half_extents.x + bird_radius.x
                     and abs(position.y - center.y) < half_extents.y + bird_radius.y
                     and abs(position.z - center.z) < half_extents.z + bird_radius.z):
-                self.lose_life()
-                if not self.game_over:
-                    self.status_text.text = "Rock collision — back at your last nest"
-                    self.status_text.color = HUD_COLOR
+                self.lose_life("Rock collision")
                 return
 
     def _update_camera_and_hud(self):

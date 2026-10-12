@@ -34,7 +34,7 @@ Then activate `.venv313` and continue with the install steps above. The existing
 - **Space**: flap boost and fly faster
 - **R**: restart
 
-Reach the gold nest marker along the enveloping island to save your progress. Nests restore one heart, up to three. Three strikes end the flight; your current nest is your respawn point. Teal bird flocks wander through the canyon, while cliff walls and stone arches make the route more demanding. Dodge the flocks, steer between or around the cliffs, and fly under or over the arches. Rock collisions cost a life.
+Reach the gold nest marker along the enveloping island to save your progress. Nests restore one heart, up to three. Three strikes end the flight; your current nest is your respawn point. Teal bird flocks wander through the canyon, while cliff walls and stone arches make the route more demanding. Dodge the flocks, steer between or around the cliffs, and fly under or over the arches. Collisions and missed nests cost a life, with the cause shown on screen. There is currently no wind mechanic.
 
 The world and birds are drawn from Ursina's built-in 3D primitives, so there are no external art assets to download.
 
